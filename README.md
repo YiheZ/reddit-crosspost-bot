@@ -87,7 +87,6 @@ pip install praw requests
 | `MY_GIST_PAT`              | GitHub Personal Access Token with `gist` scope |
 | `TRANSLATE_TARGET_LANG`    | Target language code for translation (default `ZH`) |
 | `TRANSLATE_SOURCE_LANGS`   | JSON mapping of source sub to language code (e.g., `'{"worldnews":"EN","Portuguese":"PT","technology":"EN"}'`) |
-| `INTERVAL_MIN`             | (Optional) Interval in minutes if running periodically |
 
 Example `.env` file:
 
@@ -107,7 +106,6 @@ GIST_ID=abcd1234efgh5678ijkl
 MY_GIST_PAT=ghp_YourPATTokenHere
 TRANSLATE_TARGET_LANG=ZH
 TRANSLATE_SOURCE_LANGS={"worldnews":"EN","Portuguese":"PT","technology":"EN"}
-INTERVAL_MIN=30
 ```
 
 ---
