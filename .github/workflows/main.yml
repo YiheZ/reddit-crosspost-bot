@@ -1,0 +1,30 @@
+name: Reddit Auto Crosspost
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run bot
+        run: python bot.py
+        env:
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+          REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+          SOURCE_SUBS: ${{ vars.SOURCE_SUBS }}
+          TARGET_SUB: ${{ vars.TARGET_SUB }}
+          KEYWORDS: ${{ vars.KEYWORDS }}
+          LIMIT_POSTS: ${{ vars.LIMIT_POSTS }}
+          INTERVAL_MIN: ${{ vars.INTERVAL_MIN }}
