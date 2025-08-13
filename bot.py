@@ -1,6 +1,5 @@
 import os
 import praw
-import time
 import json
 import requests
 from datetime import datetime, timedelta, timezone
@@ -61,31 +60,29 @@ def match_keywords(title):
     title_lower = title.lower()
     return any(kw.strip() in title_lower for kw in KEYWORDS if kw.strip())
 
-def get_top_posts_past_day(subreddit_name, limit=5):
+def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
     subreddit = reddit.subreddit(subreddit_name)
     one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
     posts = []
-    # We fetch more posts from 'new' to filter by time manually
-    for post in subreddit.new(limit=limit * 5):
+    for post in subreddit.new(limit=max_candidates):
         post_time = datetime.fromtimestamp(post.created_utc, timezone.utc)
         if post_time < one_day_ago:
             continue
         posts.append(post)
-    # Sort by score descending (popularity)
     posts.sort(key=lambda p: p.score, reverse=True)
-    return posts[:limit]
+    return posts[:top_limit]
 
 try:
     for sub in SOURCE_SUBS:
-        posts = get_top_posts_past_day(sub.strip(), limit=LIMIT_POSTS)
+        posts = get_top_posts_past_day(sub.strip(), max_candidates=500, top_limit=100)
         crossposted = 0
         for post in posts:
             if post.id in posted_ids:
+                # Already crossposted, skip but don't count toward limit
                 continue
             if not match_keywords(post.title):
                 continue
 
-            # Crosspost with flair if flair ID is set
             crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
             if CROSSPOST_FLAIR_ID:
                 crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
