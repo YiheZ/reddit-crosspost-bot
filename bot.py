@@ -4,6 +4,7 @@ import time
 import json
 import requests
 from datetime import datetime, timedelta, timezone
+import sys
 
 # Reddit API setup
 reddit = praw.Reddit(
@@ -23,18 +24,15 @@ HEADERS = {
 }
 
 def load_posted_ids():
-    try:
-        response = requests.get(GIST_API_URL, headers=HEADERS)
-        response.raise_for_status()
-        gist_data = response.json()
-        files = gist_data.get("files", {})
-        posted_file = files.get("posted_ids.json", {})
-        content = posted_file.get("content", "{}")
-        data = json.loads(content)
-        return set(data.get("posted_ids", []))
-    except Exception as e:
-        print(f"⚠️ Failed to load posted IDs from Gist: {e}")
-        return set()
+    response = requests.get(GIST_API_URL, headers=HEADERS)
+    if response.status_code != 200:
+        raise RuntimeError(f"Failed to load posted IDs from Gist: {response.status_code} {response.text}")
+    gist_data = response.json()
+    files = gist_data.get("files", {})
+    posted_file = files.get("posted_ids.json", {})
+    content = posted_file.get("content", "{}")
+    data = json.loads(content)
+    return set(data.get("posted_ids", []))
 
 def save_posted_ids(posted_ids):
     data = {
@@ -43,12 +41,11 @@ def save_posted_ids(posted_ids):
         }
     }
     payload = {"files": data}
-    try:
-        response = requests.patch(GIST_API_URL, headers=HEADERS, json=payload)
-        response.raise_for_status()
-    except Exception as e:
-        print(f"⚠️ Failed to save posted IDs to Gist: {e}")
+    response = requests.patch(GIST_API_URL, headers=HEADERS, json=payload)
+    if response.status_code != 200:
+        raise RuntimeError(f"Failed to save posted IDs to Gist: {response.status_code} {response.text}")
 
+# Read env vars
 SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 KEYWORDS = os.getenv("KEYWORDS", "").lower().split(",")
@@ -74,8 +71,8 @@ def get_top_posts_past_day(subreddit_name, limit=5):
     posts.sort(key=lambda p: p.score, reverse=True)
     return posts[:limit]
 
-for sub in SOURCE_SUBS:
-    try:
+try:
+    for sub in SOURCE_SUBS:
         posts = get_top_posts_past_day(sub.strip(), limit=LIMIT_POSTS)
         crossposted = 0
         for post in posts:
@@ -89,9 +86,9 @@ for sub in SOURCE_SUBS:
             crossposted += 1
             if crossposted >= LIMIT_POSTS:
                 break
-    except Exception as e:
-        print(f"❌ Error processing r/{sub}: {e}")
 
-save_posted_ids(posted_ids)
-
-print("✅ Done")
+    save_posted_ids(posted_ids)
+    print("✅ Done")
+except Exception as e:
+    print(f"❌ Fatal error: {e}")
+    sys.exit(1) 
