@@ -81,7 +81,7 @@ pip install praw requests
 | `FORCE_SUBMIT_SUBS`        | Comma-separated subs to submit instead of crosspost (e.g., `news`) |
 | `TARGET_SUB`               | Target subreddit to crosspost/submit to |
 | `KEYWORDS`                 | Comma-separated keywords to match in titles (leave empty for all posts) |
-| `LIMIT_POSTS`              | Maximum posts to crosspost/submit per subreddit per run |
+| `LIMIT_POSTS`              | JSON mapping of subreddit to max posts per run (e.g., `'{"worldnews":3,"technology":5}'`). Defaults to 5 for any sub not listed. |
 | `CROSSPOST_FLAIR_ID`       | Optional flair template ID for the crossposts |
 | `GIST_ID`                  | Your Gist ID containing `posted_ids.json` |
 | `MY_GIST_PAT`              | GitHub Personal Access Token with `gist` scope |
@@ -96,12 +96,12 @@ REDDIT_CLIENT_ID=abc123
 REDDIT_CLIENT_SECRET=xyz456
 REDDIT_USERNAME=yourusername
 REDDIT_PASSWORD=yourpassword
-SOURCE_SUBS=worldnews,technology
+SOURCE_SUBS=worldnews,technology,china_irl
 TRANSLATE_SUBS=worldnews,technology
 FORCE_SUBMIT_SUBS=worldnews
 TARGET_SUB=yoursub
-KEYWORDS=technology
-LIMIT_POSTS=3
+KEYWORDS=technology,AI
+LIMIT_POSTS={"worldnews":3,"technology":5}
 CROSSPOST_FLAIR_ID=flairid123
 GIST_ID=abcd1234efgh5678ijkl
 MY_GIST_PAT=ghp_YourPATTokenHere
