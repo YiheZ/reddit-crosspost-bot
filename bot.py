@@ -31,7 +31,7 @@ SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
 TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
 FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
-KEYWORDS = os.getenv("KEYWORDS", "").lower().split(",")
+EXCLUDE_KEYWORDS = json.loads(os.getenv("EXCLUDE_KEYWORDS", "[]"))
 CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = json.loads(os.getenv("TRANSLATE_SOURCE_LANGS", "{}"))
@@ -65,10 +65,11 @@ posted_ids = load_posted_ids()
 
 # Helper functions
 def match_keywords(title):
-    if not KEYWORDS or KEYWORDS == ['']:
-        return True
+    """Return True if the post title does NOT contain any excluded keyword."""
+    if not EXCLUDE_KEYWORDS:
+        return True  # nothing to exclude
     title_lower = title.lower()
-    return any(kw.strip() in title_lower for kw in KEYWORDS if kw.strip())
+    return not any(kw.lower() in title_lower for kw in EXCLUDE_KEYWORDS if kw)
 
 def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
     subreddit = reddit.subreddit(subreddit_name)
