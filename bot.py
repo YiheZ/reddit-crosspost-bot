@@ -3,7 +3,7 @@ import praw
 import time
 import json
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Reddit API setup
 reddit = praw.Reddit(
@@ -14,12 +14,11 @@ reddit = praw.Reddit(
     password=os.getenv("REDDIT_PASSWORD")
 )
 
-# GitHub Gist API info from env
 GIST_ID = os.getenv("GIST_ID")
-GITHUB_PAT = os.getenv("MY_GIST_PAT")
+MY_GIST_PAT = os.getenv("MY_GIST_PAT")
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
 HEADERS = {
-    "Authorization": f"token {GITHUB_PAT}",
+    "Authorization": f"token {MY_GIST_PAT}",
     "Accept": "application/vnd.github.v3+json"
 }
 
@@ -50,15 +49,11 @@ def save_posted_ids(posted_ids):
     except Exception as e:
         print(f"⚠️ Failed to save posted IDs to Gist: {e}")
 
-# Variables from repo variables
 SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 KEYWORDS = os.getenv("KEYWORDS", "").lower().split(",")
 LIMIT_POSTS = int(os.getenv("LIMIT_POSTS", "3"))
-INTERVAL_MIN = int(os.getenv("INTERVAL_MIN", "60"))
-STATE_FILE = "last_run.json"
 
-# Load last run time from environment or default to 0
 posted_ids = load_posted_ids()
 
 def match_keywords(title):
@@ -69,10 +64,10 @@ def match_keywords(title):
 
 def get_top_posts_past_day(subreddit_name, limit=5):
     subreddit = reddit.subreddit(subreddit_name)
-    one_day_ago = datetime.utcnow() - timedelta(days=1)
+    one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
     posts = []
     for post in subreddit.new(limit=limit*3):
-        post_time = datetime.utcfromtimestamp(post.created_utc)
+        post_time = datetime.fromtimestamp(post.created_utc, timezone.utc)
         if post_time < one_day_ago:
             continue
         posts.append(post)
