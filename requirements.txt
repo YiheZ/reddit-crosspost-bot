@@ -1,1 +1,2 @@
-praw
+praw==7.7.1
+requests==2.31.0
