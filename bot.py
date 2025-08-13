@@ -1,10 +1,13 @@
 import os
 import praw
 import json
-from datetime import datetime, timedelta, timezone
 import sys
+import time
+import random
+from datetime import datetime, timedelta, timezone
 from deepl_translate import translate_with_deepl
 
+# Reddit API setup
 reddit = praw.Reddit(
     client_id=os.getenv("REDDIT_CLIENT_ID"),
     client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
@@ -13,13 +16,13 @@ reddit = praw.Reddit(
     password=os.getenv("REDDIT_PASSWORD")
 )
 
-# GitHub Gist setup (same as before)
+# GitHub Gist setup
 GIST_ID = os.getenv("GIST_ID")
 MY_GIST_PAT = os.getenv("MY_GIST_PAT")
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
 HEADERS = {"Authorization": f"token {MY_GIST_PAT}", "Accept": "application/vnd.github.v3+json"}
 
-# Config variables
+# Configuration variables
 SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
 TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
@@ -27,12 +30,9 @@ KEYWORDS = os.getenv("KEYWORDS", "").lower().split(",")
 LIMIT_POSTS = int(os.getenv("LIMIT_POSTS", "3"))
 CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
-
-# Optional per-subreddit source languages (JSON string)
-# Example: '{"china_irl":"ZH","news":"EN","funny":null}'
 TRANSLATE_SOURCE_LANGS = json.loads(os.getenv("TRANSLATE_SOURCE_LANGS", "{}"))
 
-# Load posted IDs (same as before)
+# Load posted IDs
 def load_posted_ids():
     response = requests.get(GIST_API_URL, headers=HEADERS)
     if response.status_code != 200:
@@ -51,6 +51,7 @@ def save_posted_ids(posted_ids):
 
 posted_ids = load_posted_ids()
 
+# Helper functions
 def match_keywords(title):
     if not KEYWORDS or KEYWORDS == ['']:
         return True
@@ -85,10 +86,7 @@ try:
                 else:
                     print(f"Translation error: {result['error']} (posting original title)")
 
-            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
-            if CROSSPOST_FLAIR_ID:
-                crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
-
+            # Crosspost using submit (with flair if set)
             reddit.subreddit(TARGET_SUB).submit(
                 title=title_to_post,
                 url=post.url,
@@ -98,8 +96,15 @@ try:
             print(f"✅ Crossposted from r/{sub}: {title_to_post}")
             posted_ids.add(post.id)
             crossposted += 1
+
+            # Random sleep 2–5 seconds between posts
+            time.sleep(random.randint(2, 5))
+
             if crossposted >= LIMIT_POSTS:
                 break
+
+        # Random sleep 5–10 seconds after finishing a subreddit
+        time.sleep(random.randint(5, 10))
 
     save_posted_ids(posted_ids)
     print("✅ Done")
