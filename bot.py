@@ -29,6 +29,7 @@ HEADERS = {
 # Configuration variables
 SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
 TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
+FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 KEYWORDS = os.getenv("KEYWORDS", "").lower().split(",")
 LIMIT_POSTS = int(os.getenv("LIMIT_POSTS", "3"))
@@ -98,15 +99,23 @@ try:
                 else:
                     print(f"Translation error: {result['error']} (posting original title)")
 
-            # Crosspost properly
-            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
-            if CROSSPOST_FLAIR_ID:
-                crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
-            if sub.strip() in TRANSLATE_SUBS:
-                crosspost_kwargs["title"] = title_to_post
+            # Decide between submit() or crosspost()
+            if sub.strip() in FORCE_SUBMIT_SUBS:
+                reddit.subreddit(TARGET_SUB).submit(
+                    title=title_to_post,
+                    url=post.url,
+                    flair_id=CROSSPOST_FLAIR_ID if CROSSPOST_FLAIR_ID else None
+                )
+                print(f"✅ Submitted (force submit) from r/{sub}: {title_to_post}")
+            else:
+                crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
+                if CROSSPOST_FLAIR_ID:
+                    crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
+                if sub.strip() in TRANSLATE_SUBS:
+                    crosspost_kwargs["title"] = title_to_post
+                post.crosspost(**crosspost_kwargs)
+                print(f"✅ Crossposted from r/{sub}: {title_to_post}")
 
-            post.crosspost(**crosspost_kwargs)
-            print(f"✅ Crossposted from r/{sub}: {title_to_post}")
             posted_ids.add(post.id)
             crossposted += 1
 
