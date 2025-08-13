@@ -2,14 +2,12 @@ name: Reddit Crosspost Bot
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # every 30 minutes
+    - cron: '0 */2 * * *'  # every 2 hours
   workflow_dispatch:       # manual trigger
 
 jobs:
   run-crosspost:
     runs-on: ubuntu-latest
-    env:
-      INTERVAL_MIN: 30
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
@@ -37,4 +35,3 @@ jobs:
           TRANSLATE_TARGET_LANG: ${{ vars.TRANSLATE_TARGET_LANG }}
           TRANSLATE_SOURCE_LANGS: ${{ vars.TRANSLATE_SOURCE_LANGS }}
           FORCE_SUBMIT_SUBS: ${{ vars.FORCE_SUBMIT_SUBS }}
-          INTERVAL_MIN: ${{ vars.INTERVAL_MIN }}
