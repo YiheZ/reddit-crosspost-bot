@@ -2,7 +2,7 @@ name: Reddit Auto Crosspost
 
 on:
   schedule:
-    - cron: "0 * * * *"  # 每小时运行一次
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -26,3 +26,5 @@ jobs:
           SOURCE_SUBS: ${{ vars.SOURCE_SUBS }}
           TARGET_SUB: ${{ vars.TARGET_SUB }}
           KEYWORDS: ${{ vars.KEYWORDS }}
+          LIMIT_POSTS: ${{ vars.LIMIT_POSTS }}
+          INTERVAL_MIN: ${{ vars.INTERVAL_MIN }}
