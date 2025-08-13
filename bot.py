@@ -15,6 +15,7 @@ reddit = praw.Reddit(
     password=os.getenv("REDDIT_PASSWORD")
 )
 
+# GitHub Gist API info from env
 GIST_ID = os.getenv("GIST_ID")
 MY_GIST_PAT = os.getenv("MY_GIST_PAT")
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
@@ -50,6 +51,7 @@ SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 KEYWORDS = os.getenv("KEYWORDS", "").lower().split(",")
 LIMIT_POSTS = int(os.getenv("LIMIT_POSTS", "3"))
+CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID")  # flair template ID for the crossposts
 
 posted_ids = load_posted_ids()
 
@@ -63,11 +65,13 @@ def get_top_posts_past_day(subreddit_name, limit=5):
     subreddit = reddit.subreddit(subreddit_name)
     one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
     posts = []
-    for post in subreddit.new(limit=limit*3):
+    # We fetch more posts from 'new' to filter by time manually
+    for post in subreddit.new(limit=limit * 5):
         post_time = datetime.fromtimestamp(post.created_utc, timezone.utc)
         if post_time < one_day_ago:
             continue
         posts.append(post)
+    # Sort by score descending (popularity)
     posts.sort(key=lambda p: p.score, reverse=True)
     return posts[:limit]
 
@@ -80,7 +84,14 @@ try:
                 continue
             if not match_keywords(post.title):
                 continue
-            post.crosspost(subreddit=TARGET_SUB, send_replies=False)
+
+            # Crosspost with flair if flair ID is set
+            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
+            if CROSSPOST_FLAIR_ID:
+                crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
+
+            post.crosspost(**crosspost_kwargs)
+
             print(f"✅ Crossposted from r/{sub}: {post.title}")
             posted_ids.add(post.id)
             crossposted += 1
@@ -91,4 +102,4 @@ try:
     print("✅ Done")
 except Exception as e:
     print(f"❌ Fatal error: {e}")
-    sys.exit(1) 
+    sys.exit(1)
