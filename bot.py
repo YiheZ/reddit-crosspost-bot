@@ -32,10 +32,17 @@ TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
 FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 KEYWORDS = os.getenv("KEYWORDS", "").lower().split(",")
-LIMIT_POSTS = int(os.getenv("LIMIT_POSTS", "3"))
 CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = json.loads(os.getenv("TRANSLATE_SOURCE_LANGS", "{}"))
+
+# LIMIT_POSTS per subreddit, default 5
+try:
+    LIMIT_POSTS_JSON = os.getenv("LIMIT_POSTS", "{}")
+    LIMIT_POSTS_DICT = json.loads(LIMIT_POSTS_JSON)
+except json.JSONDecodeError:
+    LIMIT_POSTS_DICT = {}
+DEFAULT_LIMIT_POSTS = 5
 
 # Load posted IDs from Gist
 def load_posted_ids():
@@ -76,6 +83,9 @@ try:
     for sub in SOURCE_SUBS:
         posts = get_top_posts_past_day(sub.strip(), max_candidates=500, top_limit=100)
         crossposted = 0
+
+        # Determine subreddit-specific limit
+        sub_limit = LIMIT_POSTS_DICT.get(sub.strip(), DEFAULT_LIMIT_POSTS)
 
         for post in posts:
             if post.id in posted_ids:
@@ -122,7 +132,7 @@ try:
             # Random sleep 2–5 seconds between posts
             time.sleep(random.randint(2, 5))
 
-            if crossposted >= LIMIT_POSTS:
+            if crossposted >= sub_limit:
                 break
 
         # Random sleep 5–10 seconds after finishing a subreddit
