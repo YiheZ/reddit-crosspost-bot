@@ -36,13 +36,13 @@ CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = json.loads(os.getenv("TRANSLATE_SOURCE_LANGS", "{}"))
 
-# LIMIT_POSTS per subreddit, default 5
+# LIMIT_POSTS per subreddit, default 3
 try:
     LIMIT_POSTS_JSON = os.getenv("LIMIT_POSTS", "{}")
     LIMIT_POSTS_DICT = json.loads(LIMIT_POSTS_JSON)
 except json.JSONDecodeError:
     LIMIT_POSTS_DICT = {}
-DEFAULT_LIMIT_POSTS = 5
+DEFAULT_LIMIT_POSTS = 3
 
 # Load posted IDs from Gist
 def load_posted_ids():
