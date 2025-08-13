@@ -1,32 +1,35 @@
-name: Reddit Auto Crosspost
+name: Reddit Crosspost Bot
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
-  workflow_dispatch:
+    - cron: '*/5 * * * *'  # every 5 minutes
+  workflow_dispatch:       # manual trigger
 
 jobs:
-  run:
+  run-crosspost:
     runs-on: ubuntu-latest
+    env:
+      INTERVAL_MIN: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.x"
+          python-version: '3.10'
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install praw requests
       - name: Run bot
         run: python bot.py
         env:
-          GIST_ID: ${{ vars.GIST_ID }}
-          MY_GIST_PAT: ${{ secrets.MY_GIST_PAT }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
           REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
           REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+          GIST_ID: ${{ vars.GIST_ID }}
+          MY_GIST_PAT: ${{ secrets.MY_GIST_PAT }}
           SOURCE_SUBS: ${{ vars.SOURCE_SUBS }}
           TARGET_SUB: ${{ vars.TARGET_SUB }}
           KEYWORDS: ${{ vars.KEYWORDS }}
           LIMIT_POSTS: ${{ vars.LIMIT_POSTS }}
+          CROSSPOST_FLAIR_ID: ${{ vars.CROSSPOST_FLAIR_ID }}
           INTERVAL_MIN: ${{ vars.INTERVAL_MIN }}
