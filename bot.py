@@ -21,7 +21,10 @@ reddit = praw.Reddit(
 GIST_ID = os.getenv("GIST_ID")
 MY_GIST_PAT = os.getenv("MY_GIST_PAT")
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
-HEADERS = {"Authorization": f"token {MY_GIST_PAT}", "Accept": "application/vnd.github.v3+json"}
+HEADERS = {
+    "Authorization": f"token {MY_GIST_PAT}",
+    "Accept": "application/vnd.github.v3+json"
+}
 
 # Configuration variables
 SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
@@ -33,7 +36,7 @@ CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = json.loads(os.getenv("TRANSLATE_SOURCE_LANGS", "{}"))
 
-# Load posted IDs
+# Load posted IDs from Gist
 def load_posted_ids():
     response = requests.get(GIST_API_URL, headers=HEADERS)
     if response.status_code != 200:
@@ -62,7 +65,8 @@ def match_keywords(title):
 def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
     subreddit = reddit.subreddit(subreddit_name)
     one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
-    posts = [p for p in subreddit.new(limit=max_candidates) if datetime.fromtimestamp(p.created_utc, timezone.utc) >= one_day_ago]
+    posts = [p for p in subreddit.new(limit=max_candidates)
+             if datetime.fromtimestamp(p.created_utc, timezone.utc) >= one_day_ago]
     posts.sort(key=lambda p: p.score, reverse=True)
     return posts[:top_limit]
 
@@ -71,6 +75,7 @@ try:
     for sub in SOURCE_SUBS:
         posts = get_top_posts_past_day(sub.strip(), max_candidates=500, top_limit=100)
         crossposted = 0
+
         for post in posts:
             if post.id in posted_ids:
                 continue
@@ -78,22 +83,29 @@ try:
                 continue
 
             title_to_post = post.title
+
+            # Translate title if subreddit requires translation
             if sub.strip() in TRANSLATE_SUBS:
                 source_lang = TRANSLATE_SOURCE_LANGS.get(sub.strip())
-                result = translate_with_deepl(post.title, target_lang=TRANSLATE_TARGET_LANG, source_lang=source_lang)
+                result = translate_with_deepl(
+                    post.title,
+                    target_lang=TRANSLATE_TARGET_LANG,
+                    source_lang=source_lang
+                )
                 if "error" not in result:
                     title_to_post = result["text"]
                     print(f"Translated '{post.title}' -> '{title_to_post}' (detected: {result.get('detected_language')})")
                 else:
                     print(f"Translation error: {result['error']} (posting original title)")
 
-            # Crosspost using submit (with flair if set)
-            reddit.subreddit(TARGET_SUB).submit(
-                title=title_to_post,
-                url=post.url,
-                flair_id=CROSSPOST_FLAIR_ID if CROSSPOST_FLAIR_ID else None
-            )
+            # Crosspost properly
+            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
+            if CROSSPOST_FLAIR_ID:
+                crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
+            if sub.strip() in TRANSLATE_SUBS:
+                crosspost_kwargs["title"] = title_to_post
 
+            post.crosspost(**crosspost_kwargs)
             print(f"✅ Crossposted from r/{sub}: {title_to_post}")
             posted_ids.add(post.id)
             crossposted += 1
