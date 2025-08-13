@@ -16,7 +16,7 @@ reddit = praw.Reddit(
 
 # GitHub Gist API info from env
 GIST_ID = os.getenv("GIST_ID")
-GITHUB_PAT = os.getenv("GITHUB_PAT")
+GITHUB_PAT = os.getenv("MY_GIST_PAT")
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
 HEADERS = {
     "Authorization": f"token {GITHUB_PAT}",
