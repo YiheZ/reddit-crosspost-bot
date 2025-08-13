@@ -19,6 +19,8 @@ jobs:
       - name: Run bot
         run: python bot.py
         env:
+          GIST_ID: ${{ vars.GIST_ID }}
+          MY_GIST_PAT: ${{ secrets.MY_GIST_PAT }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
           REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
