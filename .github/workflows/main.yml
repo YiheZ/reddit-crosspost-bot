@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       INTERVAL_MIN: 30
-      # your other env variables here, or pass secrets as needed
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
