@@ -2,14 +2,14 @@ name: Reddit Crosspost Bot
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # every 5 minutes
+    - cron: '*/30 * * * *'  # every 30 minutes
   workflow_dispatch:       # manual trigger
 
 jobs:
   run-crosspost:
     runs-on: ubuntu-latest
     env:
-      INTERVAL_MIN: 5
+      INTERVAL_MIN: 30
       # your other env variables here, or pass secrets as needed
     steps:
       - uses: actions/checkout@v3
