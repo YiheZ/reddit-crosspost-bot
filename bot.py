@@ -4,6 +4,7 @@ import json
 import sys
 import time
 import random
+import requests
 from datetime import datetime, timedelta, timezone
 from deepl_translate import translate_with_deepl
 
