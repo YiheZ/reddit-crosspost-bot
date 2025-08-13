@@ -76,9 +76,9 @@ pip install praw requests
 | `REDDIT_CLIENT_SECRET`     | Your Reddit App client secret |
 | `REDDIT_USERNAME`          | Your Reddit username |
 | `REDDIT_PASSWORD`          | Your Reddit password |
-| `SOURCE_SUBS`              | Comma-separated source subreddits (e.g., `news,worldnews,china_irl`) |
+| `SOURCE_SUBS`              | Comma-separated source subreddits (e.g., `news,worldnews`) |
 | `TRANSLATE_SUBS`           | Comma-separated source subs that should be translated (e.g., `worldnews,technology`) |
-| `FORCE_SUBMIT_SUBS`        | Comma-separated subs to submit instead of crosspost (e.g., `china_irl,news`) |
+| `FORCE_SUBMIT_SUBS`        | Comma-separated subs to submit instead of crosspost (e.g., `news`) |
 | `TARGET_SUB`               | Target subreddit to crosspost/submit to |
 | `KEYWORDS`                 | Comma-separated keywords to match in titles (leave empty for all posts) |
 | `LIMIT_POSTS`              | Maximum posts to crosspost/submit per subreddit per run |
@@ -86,7 +86,7 @@ pip install praw requests
 | `GIST_ID`                  | Your Gist ID containing `posted_ids.json` |
 | `MY_GIST_PAT`              | GitHub Personal Access Token with `gist` scope |
 | `TRANSLATE_TARGET_LANG`    | Target language code for translation (default `ZH`) |
-| `TRANSLATE_SOURCE_LANGS`   | JSON mapping of source sub to language code (e.g., `'{"worldnews":"EN","china_irl":"ZH","technology":"EN"}'`) |
+| `TRANSLATE_SOURCE_LANGS`   | JSON mapping of source sub to language code (e.g., `'{"worldnews":"EN","Portuguese":"PT","technology":"EN"}'`) |
 | `INTERVAL_MIN`             | (Optional) Interval in minutes if running periodically |
 
 Example `.env` file:
@@ -96,17 +96,17 @@ REDDIT_CLIENT_ID=abc123
 REDDIT_CLIENT_SECRET=xyz456
 REDDIT_USERNAME=yourusername
 REDDIT_PASSWORD=yourpassword
-SOURCE_SUBS=china_irl,worldnews,technology
+SOURCE_SUBS=worldnews,technology
 TRANSLATE_SUBS=worldnews,technology
-FORCE_SUBMIT_SUBS=china_irl
-TARGET_SUB=zhongwen
-KEYWORDS=china,technology
+FORCE_SUBMIT_SUBS=worldnews
+TARGET_SUB=yoursub
+KEYWORDS=technology
 LIMIT_POSTS=3
 CROSSPOST_FLAIR_ID=flairid123
 GIST_ID=abcd1234efgh5678ijkl
 MY_GIST_PAT=ghp_YourPATTokenHere
 TRANSLATE_TARGET_LANG=ZH
-TRANSLATE_SOURCE_LANGS={"worldnews":"EN","china_irl":"ZH","technology":"EN"}
+TRANSLATE_SOURCE_LANGS={"worldnews":"EN","Portuguese":"PT","technology":"EN"}
 INTERVAL_MIN=30
 ```
 
