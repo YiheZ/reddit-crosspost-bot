@@ -6,12 +6,15 @@ DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", "")
 
 def translate_with_deepl(text: str, target_lang: str = "ZH", source_lang: str = None) -> dict:
     """
-    Translate text using DeepL API.
-    source_lang=None for auto-detect
+    Translate text using DeepL API with full localization.
+    source_lang=None for auto-detect.
     Returns dict: {"text": ..., "detected_language": ...} or {"error": ...}
     """
     if not DEEPL_API_KEY:
         return {"error": "DEEPL_API_KEY not configured"}
+
+    if not text:
+        return {"text": "", "detected_language": "Unknown"}
 
     url = "https://api-free.deepl.com/v2/translate"
     headers = {"Authorization": f"DeepL-Auth-Key {DEEPL_API_KEY}", "Content-Type": "application/json"}
@@ -23,10 +26,10 @@ def translate_with_deepl(text: str, target_lang: str = "ZH", source_lang: str = 
         response = requests.post(url, headers=headers, json=data)
         if response.status_code == 200:
             result = response.json()
-            translation = result["translations"][0]
+            translation = result["translations"][0]["text"]
             return {
-                "text": translation["text"],
-                "detected_language": translation.get("detected_source_language", "Unknown")
+                "text": translation,
+                "detected_language": result["translations"][0].get("detected_source_language", "Unknown")
             }
         else:
             return {"error": f"DeepL API error {response.status_code}: {response.text}"}
