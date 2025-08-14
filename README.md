@@ -1,7 +1,7 @@
 
 # Reddit Auto Crosspost Bot
 
-This bot automatically crossposts the most popular posts from one or more source subreddits to a target subreddit, based on keywords and a daily popularity ranking. It can optionally translate post titles and supports force-submitting instead of crossposting for certain subreddits.
+This bot automatically crossposts the most popular posts from one or more source subreddits to a target subreddit, based on a daily popularity ranking. It can optionally translate post titles and supports force-submitting instead of crossposting for certain subreddits.
 
 Posted IDs are stored in a GitHub Gist to avoid reposting duplicates.
 
@@ -10,7 +10,7 @@ Posted IDs are stored in a GitHub Gist to avoid reposting duplicates.
 ## Features
 
 - Pulls posts from multiple source subreddits
-- Filters posts by keywords (optional)
+- Filters out posts by keywords (optional)
 - Sorts by **popularity** in the past 24 hours
 - Limits the number of posts per run and per source subreddit
 - Adds an optional flair to crossposts
@@ -80,7 +80,7 @@ pip install praw requests
 | `TRANSLATE_SUBS`           | Comma-separated source subs that should be translated (e.g., `worldnews,technology`) |
 | `FORCE_SUBMIT_SUBS`        | Comma-separated subs to submit instead of crosspost (e.g., `news`) |
 | `TARGET_SUB`               | Target subreddit to crosspost/submit to |
-| `KEYWORDS`                 | Comma-separated keywords to match in titles (leave empty for all posts) |
+| `EXCLUDE_KEYWORDS`         | JSON separated keywords to match in titles (leave empty for all posts) |
 | `LIMIT_POSTS`              | JSON mapping of subreddit to max posts per run (e.g., `'{"worldnews":3,"technology":5}'`). Defaults to 5 for any sub not listed. |
 | `CROSSPOST_FLAIR_ID`       | Optional flair template ID for the crossposts |
 | `GIST_ID`                  | Your Gist ID containing `posted_ids.json` |
@@ -99,7 +99,7 @@ SOURCE_SUBS=worldnews,technology,china_irl
 TRANSLATE_SUBS=worldnews,technology
 FORCE_SUBMIT_SUBS=worldnews
 TARGET_SUB=yoursub
-KEYWORDS=technology,AI
+EXCLUDE_KEYWORDS=["technology","AI"]
 LIMIT_POSTS={"worldnews":3,"technology":5}
 CROSSPOST_FLAIR_ID=flairid123
 GIST_ID=abcd1234efgh5678ijkl
