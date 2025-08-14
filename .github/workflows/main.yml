@@ -33,7 +33,7 @@ jobs:
           MY_GIST_PAT: ${{ secrets.MY_GIST_PAT }}
           SOURCE_SUBS: ${{ vars.SOURCE_SUBS }}
           TARGET_SUB: ${{ vars.TARGET_SUB }}
-          KEYWORDS: ${{ vars.KEYWORDS }}
+          EXCLUDE_KEYWORDS: ${{ vars.EXCLUDE_KEYWORDS }}
           LIMIT_POSTS: ${{ vars.LIMIT_POSTS }}
           CROSSPOST_FLAIR_ID: ${{ vars.CROSSPOST_FLAIR_ID }}
           TRANSLATE_SUBS: ${{ vars.TRANSLATE_SUBS }}
