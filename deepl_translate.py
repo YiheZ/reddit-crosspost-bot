@@ -1,49 +1,117 @@
+import os
 import requests
-import re
+import json
 
-DEEPL_API_KEY = "YOUR_DEEPL_API_KEY"  # put your key here
+DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", "")
 
-def localize_quotes(text: str) -> str:
+# Distinct opening→closing pairs (Chinese & common brackets)
+PAIRS = {
+    "《": "》",
+    "“": "”",
+    "‘": "’",
+    "「": "」",
+    "『": "』",
+    "〈": "〉",
+    "（": "）",  # full-width parentheses
+    "(": ")",
+    "[": "]",
+    "{": "}",
+}
+REVERSE = {v: k for k, v in PAIRS.items()}
+
+SYMMETRIC_QUOTES = {"'", '"'}
+
+def _fix_missing_pairs(text: str) -> str:
     """
-    Replace remaining English-style quotes with proper Chinese quotes:
-    - “ ” for speech
-    - 《 》 for works/titles
+    Fix unmatched Chinese/ASCII bracket pairs inside the text:
+    - Prepend missing openers for stray closers.
+    - Append missing closers for unmatched openers.
     """
-    # Speech pattern: colon or says-like verb before quotes
-    speech_pattern = re.compile(r'(:|：)\s*[\'"“”](.*?)[\'"“”]')
-    # Work/title pattern
-    work_pattern = re.compile(r'[\'"“”](.*?)[\'"“”]')
+    stack = []
+    prefix_needed = []
 
-    # Detect and replace speech quotes
-    if speech_pattern.search(text):
-        text = speech_pattern.sub(lambda m: f"{m.group(1)}“{m.group(2)}”", text)
+    for ch in text:
+        if ch in PAIRS:  # opener
+            stack.append(ch)
+        elif ch in REVERSE:  # closer
+            if stack and PAIRS.get(stack[-1]) == ch:
+                stack.pop()
+            else:
+                # unmatched closer → prepend missing opener
+                prefix_needed.append(REVERSE[ch])
 
-    # Replace any remaining quotes with 《 》
-    text = work_pattern.sub(lambda m: f"《{m.group(1)}》", text)
+    # for any remaining openers in stack → append closers (reverse order)
+    suffix_needed = [PAIRS[o] for o in reversed(stack)]
+
+    if prefix_needed:
+        text = "".join(prefix_needed) + text
+    if suffix_needed:
+        text = text + "".join(suffix_needed)
 
     return text
 
+def _fix_edge_symmetric_quotes(text: str) -> str:
+    """
+    Carefully fix odd counts of straight quotes only when they
+    appear at the very start or very end of the string.
+    (Avoids adding quotes for apostrophes in the middle of words.)
+    """
+    if not text:
+        return text
+
+    for q in SYMMETRIC_QUOTES:
+        cnt = text.count(q)
+        if cnt % 2 == 1:  # unbalanced
+            if text.startswith(q):
+                text = text + q
+            elif text.endswith(q):
+                text = q + text
+            # else: ignore (likely an apostrophe inside a word)
+
+    return text
+
+def _fix_missing_brackets(translated: str) -> str:
+    """Run all post-fixes on translated text."""
+    translated = translated.strip()
+    if not translated:
+        return translated
+    translated = _fix_missing_pairs(translated)
+    translated = _fix_edge_symmetric_quotes(translated)
+    return translated
 
 def translate_with_deepl(text: str, target_lang: str = "ZH", source_lang: str = None) -> dict:
+    """
+    Translate text using DeepL API (JSON) with full localization.
+    After translation, auto-fix any missing matching bracket/quote.
+    Returns: {"text": ..., "detected_language": ...} or {"error": ...}
+    """
+    if not DEEPL_API_KEY:
+        return {"error": "DEEPL_API_KEY not configured"}
+
+    if not text:
+        return {"text": "", "detected_language": "Unknown"}
+
     url = "https://api-free.deepl.com/v2/translate"
-    payload = {
-        "auth_key": DEEPL_API_KEY,
-        "text": text,
-        "target_lang": target_lang
+    headers = {
+        "Authorization": f"DeepL-Auth-Key {DEEPL_API_KEY}",
+        "Content-Type": "application/json",
     }
+    payload = {"text": [text], "target_lang": target_lang}
     if source_lang:
         payload["source_lang"] = source_lang
 
-    # Call DeepL API
-    response = requests.post(url, data=payload)
+    try:
+        resp = requests.post(url, headers=headers, json=payload)
+        if resp.status_code == 200:
+            result = resp.json()
+            translation = result["translations"][0]["text"]
+            detected = result["translations"][0].get("detected_source_language", "Unknown")
 
-    if response.status_code == 200:
-        result = response.json()
-        translation = result["translations"][0]["text"]
-        translation = localize_quotes(translation)  # fix quotes
-        return {
-            "text": translation,
-            "detected_language": result["translations"][0].get("detected_source_language", "Unknown")
-        }
-    else:
-        raise RuntimeError(f"DeepL API error {response.status_code}: {response.text}")
+            # Post-process to fill any missing matching brackets/quotes
+            translation = _fix_missing_brackets(translation)
+
+            return {"text": translation, "detected_language": detected}
+        else:
+            return {"error": f"DeepL API error {resp.status_code}: {resp.text}"}
+    except Exception as e:
+        return {"error": str(e)}
