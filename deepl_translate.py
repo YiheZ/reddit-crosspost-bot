@@ -1,9 +1,7 @@
-import os
 import requests
-import json
 import re
 
-DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", "")
+DEEPL_API_KEY = "YOUR_DEEPL_API_KEY"  # put your key here
 
 def localize_quotes(text: str) -> str:
     """
@@ -11,36 +9,41 @@ def localize_quotes(text: str) -> str:
     - “ ” for speech
     - 《 》 for works/titles
     """
-
-    # Pattern for speech (after a colon or says-like verbs)
-    speech_pattern = re.compile(r'(:|：)\s*[\'"“”](.*?)[\'"“”]$')
-    # Pattern for works/titles (inside 《 》 in Chinese)
+    # Speech pattern: colon or says-like verb before quotes
+    speech_pattern = re.compile(r'(:|：)\s*[\'"“”](.*?)[\'"“”]')
+    # Work/title pattern
     work_pattern = re.compile(r'[\'"“”](.*?)[\'"“”]')
 
-    # Try speech detection
-    match_speech = speech_pattern.search(text)
-    if match_speech:
-        quoted = match_speech.group(2)
-        # Replace with Chinese speech quotes
-        return speech_pattern.sub(lambda m: f"{m.group(1)}“{quoted}”", text)
+    # Detect and replace speech quotes
+    if speech_pattern.search(text):
+        text = speech_pattern.sub(lambda m: f"{m.group(1)}“{m.group(2)}”", text)
 
-    # If not speech, check if it's a work title
-    match_work = work_pattern.search(text)
-    if match_work:
-        quoted = match_work.group(1)
-        # Replace with Chinese work title quotes
-        return work_pattern.sub(f"《{quoted}》", text)
+    # Replace any remaining quotes with 《 》
+    text = work_pattern.sub(lambda m: f"《{m.group(1)}》", text)
 
     return text
 
 
 def translate_with_deepl(text: str, target_lang: str = "ZH", source_lang: str = None) -> dict:
-    ...
+    url = "https://api-free.deepl.com/v2/translate"
+    payload = {
+        "auth_key": DEEPL_API_KEY,
+        "text": text,
+        "target_lang": target_lang
+    }
+    if source_lang:
+        payload["source_lang"] = source_lang
+
+    # Call DeepL API
+    response = requests.post(url, data=payload)
+
     if response.status_code == 200:
         result = response.json()
         translation = result["translations"][0]["text"]
-        translation = localize_quotes(translation)  # post-process quotes
+        translation = localize_quotes(translation)  # fix quotes
         return {
             "text": translation,
             "detected_language": result["translations"][0].get("detected_source_language", "Unknown")
         }
+    else:
+        raise RuntimeError(f"DeepL API error {response.status_code}: {response.text}")
