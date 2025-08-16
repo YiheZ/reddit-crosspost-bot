@@ -37,7 +37,11 @@ SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
 TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
 FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
+
+# Keywords filters
 EXCLUDE_KEYWORDS = json.loads(os.getenv("EXCLUDE_KEYWORDS", "[]"))
+INCLUDE_KEYWORDS = json.loads(os.getenv("INCLUDE_KEYWORDS", "[]"))
+
 CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = json.loads(os.getenv("TRANSLATE_SOURCE_LANGS", "{}"))
@@ -73,12 +77,23 @@ posted_ids = load_posted_ids()
 # -----------------------------
 # Helper functions
 # -----------------------------
-def match_keywords(title):
-    """Return True if the post title does NOT contain any excluded keyword."""
-    if not EXCLUDE_KEYWORDS:
-        return True
+def match_keywords(title: str) -> bool:
+    """
+    Return True if the post title matches keyword filters.
+    - If INCLUDE_KEYWORDS is non-empty → must contain at least one.
+    - Must NOT contain any EXCLUDE_KEYWORDS.
+    """
     title_lower = title.lower()
-    return not any(kw.lower() in title_lower for kw in EXCLUDE_KEYWORDS if kw)
+
+    # Exclude filter
+    if any(kw.lower() in title_lower for kw in EXCLUDE_KEYWORDS if kw):
+        return False
+
+    # Include filter
+    if INCLUDE_KEYWORDS:
+        return any(kw.lower() in title_lower for kw in INCLUDE_KEYWORDS if kw)
+
+    return True
 
 def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
     subreddit = reddit.subreddit(subreddit_name)
