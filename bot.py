@@ -9,6 +9,19 @@ from datetime import datetime, timedelta, timezone
 from deepl_translate import translate_with_deepl
 
 # -----------------------------
+# Helper: safely load JSON env
+# -----------------------------
+def load_json_env(env_name, default):
+    raw = os.getenv(env_name, "").strip()
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        print(f"⚠️ Invalid JSON in {env_name}, using default {default}")
+        return default
+
+# -----------------------------
 # Reddit API setup
 # -----------------------------
 reddit = praw.Reddit(
@@ -34,22 +47,21 @@ HEADERS = {
 # Configuration variables
 # -----------------------------
 SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
-TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
-FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 
-# Keywords filters
-EXCLUDE_KEYWORDS = json.loads(os.getenv("EXCLUDE_KEYWORDS", "[]"))
-INCLUDE_KEYWORDS = json.loads(os.getenv("INCLUDE_KEYWORDS", "[]"))
+INCLUDE_KEYWORDS = load_json_env("INCLUDE_KEYWORDS", [])
+EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", [])
 
-CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID")
+CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID", "")
+TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
-TRANSLATE_SOURCE_LANGS = json.loads(os.getenv("TRANSLATE_SOURCE_LANGS", "{}"))
+TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
+
+FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
 
 try:
-    LIMIT_POSTS_JSON = os.getenv("LIMIT_POSTS", "{}")
-    LIMIT_POSTS_DICT = json.loads(LIMIT_POSTS_JSON)
-except json.JSONDecodeError:
+    LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", {})
+except Exception:
     LIMIT_POSTS_DICT = {}
 DEFAULT_LIMIT_POSTS = 3
 
