@@ -4,6 +4,7 @@ import json
 import sys
 import time
 import random
+import requests
 from datetime import datetime, timedelta, timezone
 from gemini_translate import translate_with_gemini
 
