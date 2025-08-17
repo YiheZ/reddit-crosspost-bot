@@ -52,7 +52,7 @@ TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 INCLUDE_KEYWORDS = load_json_env("INCLUDE_KEYWORDS", [])
 EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", [])
 
-CROSSPOST_FLARE_ID = os.getenv("CROSSPOST_FLARE_ID", "")
+CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID", "")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
 
@@ -119,6 +119,12 @@ def is_external_link(post):
     internal_domains = ["reddit.com", "i.redd.it", "v.redd.it", "redditmedia.com"]
     return not any(d in url for d in internal_domains)
 
+def get_original_post_title(post):
+    """If post is a crosspost, get the original post title, else use current title"""
+    if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
+        return post.crosspost_parent_list[0]["title"]
+    return post.title
+
 # -----------------------------
 # Main bot logic
 # -----------------------------
@@ -141,29 +147,10 @@ try:
     # Prepare candidates for Gemini
     candidates = []
     for p in all_posts:
-        # If crosspost, use original post's title (S2)
-        original_post = getattr(p, "crosspost_parent_list", None)
-        if original_post:
-            try:
-                parent_id = original_post[0]["id"]
-                parent_post = reddit.submission(id=parent_id)
-                title_source = parent_post.title
-                src_lang = TRANSLATE_SOURCE_LANGS.get(parent_post.subreddit.display_name.lower())
-            except Exception:
-                title_source = p.title
-                src_lang = TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower())
-        else:
-            title_source = p.title
-            src_lang = TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower())
-
+        orig_title = get_original_post_title(p)
+        src_lang = TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower())
         skip_translation = src_lang and src_lang.upper() == TRANSLATE_TARGET_LANG.upper()
-        candidates.append({
-            "id": p.id,
-            "title": title_source,
-            "source_lang": None if skip_translation else src_lang,
-            "external_link": is_external_link(p),
-            "parent_id": parent_id if original_post else None
-        })
+        candidates.append({"id": p.id, "title": orig_title, "source_lang": None if skip_translation else src_lang})
 
     # Gemini translate + filter
     title_map = {}
@@ -175,30 +162,47 @@ try:
             title_map = result
 
     # Post loop
-    for c in candidates:
-        skip = title_map.get(c["id"], {}).get("skip", False)
-        title_translated = title_map.get(c["id"], {}).get("title_translated", c["title"])
-        do_submit = c["external_link"]
+    for post in all_posts:
+        title_to_post = post.title
+        skip = False
+        if post.id in title_map:
+            title_to_post = title_map[post.id]["title_translated"]
+            skip = title_map[post.id]["skip"]
 
-        print(f"Posting from candidate {c['id']}:")
-        print(f"  Title: {title_translated}")
-        print(f"  Skip: {skip}, External link: {c['external_link']}")
+        print(f"Posting from r/{post.subreddit.display_name}:")
+        print(f"  Original title: {post.title}")
+        print(f"  Title to post: {title_to_post}")
+        print(f"  Skip: {skip}")
 
-        # Save all processed IDs
-        posted_ids[c["id"]] = int(datetime.now(timezone.utc).timestamp())
-        if c.get("parent_id"):
-            posted_ids[c["parent_id"]] = int(datetime.now(timezone.utc).timestamp())
+        # Determine if external
+        external = is_external_link(post)
 
-        if skip or not do_submit:
-            print("⏭ Skipped (either similar or not external)")
+        if skip and not external:
+            print("⏭ Skipped due to similarity with recent posts")
+            # Still save IDs
+            posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
             continue
 
-        reddit.subreddit(TARGET_SUB).submit(
-            title=title_translated,
-            url=p.url,
-            flair_id=CROSSPOST_FLARE_ID if CROSSPOST_FLARE_ID else None
-        )
-        print(f"✅ Submitted external link from candidate {c['id']}")
+        # Determine submit vs crosspost
+        if external or post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
+            reddit.subreddit(TARGET_SUB).submit(
+                title=title_to_post,
+                url=post.url,
+                flair_id=CROSSPOST_FLAIR_ID if CROSSPOST_FLAIR_ID else None
+            )
+            print(f"✅ Submitted (external/force) from r/{post.subreddit.display_name}")
+        else:
+            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post}
+            if CROSSPOST_FLAIR_ID:
+                crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
+            post.crosspost(**crosspost_kwargs)
+            print(f"✅ Crossposted from r/{post.subreddit.display_name}")
+
+        # Save both IDs if crosspost
+        posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
+        if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
+            orig_id = post.crosspost_parent_list[0]["id"]
+            posted_ids[orig_id] = int(datetime.now(timezone.utc).timestamp())
 
         time.sleep(random.randint(2,5))
 
