@@ -6,7 +6,7 @@ import time
 import random
 import requests
 from datetime import datetime, timedelta, timezone
-from gemini_translate import translate_with_gemini
+from gemini_translate import translate_and_filter_with_gemini
 
 # -----------------------------
 # Helper: safely load JSON env
@@ -57,11 +57,7 @@ TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
 
 FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
-
-try:
-    LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", {})
-except Exception:
-    LIMIT_POSTS_DICT = {}
+LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", {})
 DEFAULT_LIMIT_POSTS = 1
 
 # -----------------------------
@@ -76,11 +72,10 @@ def load_posted_ids():
     files = gist_data.get("files", {})
     content = files.get("posted_ids.json", {}).get("content", "{}")
     data = json.loads(content)
-    # Clean old posts (>7 days)
     now_ts = int(datetime.now(timezone.utc).timestamp())
     clean_data = {}
     for pid, ts in data.get("posted_ids", {}).items():
-        if now_ts - ts <= 7 * 24 * 3600:
+        if now_ts - ts <= 7*24*3600:
             clean_data[pid] = ts
     return clean_data
 
@@ -112,68 +107,85 @@ def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
     posts.sort(key=lambda p: p.score, reverse=True)
     return posts[:top_limit]
 
+def get_recent_target_posts(hours=24):
+    subreddit = reddit.subreddit(TARGET_SUB)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    posts = [p for p in subreddit.new(limit=200)
+             if datetime.fromtimestamp(p.created_utc, timezone.utc) >= cutoff]
+    return [p.title for p in posts]
+
 # -----------------------------
-# Main crosspost logic
+# Main bot logic
 # -----------------------------
 try:
-    # Fetch and filter all posts first
+    # Fetch candidates
     all_posts = []
     for sub in SOURCE_SUBS:
-        posts = get_top_posts_past_day(sub.strip(), max_candidates=500, top_limit=100)
+        posts = get_top_posts_past_day(sub.strip())
         limit = LIMIT_POSTS_DICT.get(sub.strip(), DEFAULT_LIMIT_POSTS)
         filtered = [p for p in posts if p.id not in posted_ids
                     and p.subreddit.display_name.lower() != TARGET_SUB.lower()
                     and match_keywords(p.title)]
         filtered = filtered[:limit]
-        print(f"🔹 r/{sub.strip()}: fetched {len(posts)} posts, {len(filtered)} selected for posting (limit {limit}).")
+        print(f"🔹 r/{sub.strip()}: fetched {len(posts)} posts, {len(filtered)} selected (limit {limit})")
         all_posts.extend(filtered)
 
-    # Prepare source languages per post (auto-detect by default)
-    posts_to_translate = []
-    source_langs_list = []
+    # Get recent target posts
+    recent_titles = get_recent_target_posts(hours=24)
+
+    # Prepare candidates for Gemini
+    candidates = []
     for p in all_posts:
         src_lang = TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower())
         if src_lang and src_lang.upper() == TRANSLATE_TARGET_LANG.upper():
-            continue  # Skip translation if source = target
-        posts_to_translate.append(p)
-        source_langs_list.append(src_lang)  # can be None for auto-detect
-
-    # Batch translation
-    title_map = {}
-    if posts_to_translate:
-        texts = [p.title for p in posts_to_translate]
-        result = translate_with_gemini(texts, target_lang=TRANSLATE_TARGET_LANG, source_langs=source_langs_list)
-        if "texts" in result:
-            title_map = {p.id: result["texts"][i] for i, p in enumerate(posts_to_translate)}
+            skip_translation = True
         else:
-            print(f"Translation error: {result.get('error')} (posting original titles)")
+            skip_translation = False
+        candidates.append({"id": p.id, "title": p.title, "source_lang": None if skip_translation else src_lang})
 
-    # Post each
+    # Gemini translate + filter
+    title_map = {}
+    if candidates:
+        result = translate_and_filter_with_gemini(candidates, recent_titles, target_lang=TRANSLATE_TARGET_LANG)
+        if "error" in result:
+            print(f"❌ Gemini error: {result['error']}")
+        else:
+            title_map = result
+
+    # Post loop
     for post in all_posts:
-        original_title = post.title
-        title_to_post = title_map.get(post.id, original_title)
+        if post.id not in title_map:
+            title_to_post = post.title
+            skip = False
+        else:
+            skip = title_map[post.id]["skip"]
+            title_to_post = title_map[post.id]["title_translated"]
 
         print(f"Posting from r/{post.subreddit.display_name}:")
-        print(f"  Original title: {original_title}")
+        print(f"  Original title: {post.title}")
         print(f"  Title to post: {title_to_post}")
+        print(f"  Skip: {skip}")
+
+        if skip:
+            print("⏭ Skipped due to similarity with recent posts")
+            continue
 
         if post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
             reddit.subreddit(TARGET_SUB).submit(
                 title=title_to_post,
                 url=post.url,
-                flair_id=CROSSPOST_FLAIR_ID if CROSSPOST_FLAIR_ID else None
+                flair_id=CROSSPOST_FLARE_ID if CROSSPOST_FLAIR_ID else None
             )
-            print(f"✅ Submitted (force submit) from r/{post.subreddit.display_name}: {title_to_post}")
+            print(f"✅ Submitted (force submit) from r/{post.subreddit.display_name}")
         else:
-            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
-            if CROSSPOST_FLAIR_ID:
-                crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
-            crosspost_kwargs["title"] = title_to_post
+            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post}
+            if CROSSPOST_FLARE_ID:
+                crosspost_kwargs["flair_id"] = CROSSPOST_FLARE_ID
             post.crosspost(**crosspost_kwargs)
-            print(f"✅ Crossposted from r/{post.subreddit.display_name}: {title_to_post}")
+            print(f"✅ Crossposted from r/{post.subreddit.display_name}")
 
         posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
-        time.sleep(random.randint(2, 5))
+        time.sleep(random.randint(2,5))
 
     save_posted_ids(posted_ids)
     print("✅ Done")
