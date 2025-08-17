@@ -56,7 +56,6 @@ CROSSPOST_FLARE_ID = os.getenv("CROSSPOST_FLARE_ID", "")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
 
-FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
 LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", {})
 DEFAULT_LIMIT_POSTS = 1
 
@@ -137,10 +136,7 @@ try:
     candidates = []
     for p in all_posts:
         src_lang = TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower())
-        if src_lang and src_lang.upper() == TRANSLATE_TARGET_LANG.upper():
-            skip_translation = True
-        else:
-            skip_translation = False
+        skip_translation = src_lang and src_lang.upper() == TRANSLATE_TARGET_LANG.upper()
         candidates.append({"id": p.id, "title": p.title, "source_lang": None if skip_translation else src_lang})
 
     # Gemini translate + filter
@@ -166,28 +162,31 @@ try:
         print(f"  Title to post: {title_to_post}")
         print(f"  Skip: {skip}")
 
-        # even if skipped, save to posted_ids
+        # Always save posted ID, even if skipped
         posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
-        
+
         if skip:
             print("⏭ Skipped due to similarity with recent posts")
             continue
 
-        if post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
+        is_link_post = post.url != f"https://www.reddit.com{post.permalink}"
+
+        if is_link_post:
+            # Force submit for link posts
             reddit.subreddit(TARGET_SUB).submit(
                 title=title_to_post,
                 url=post.url,
                 flair_id=CROSSPOST_FLARE_ID if CROSSPOST_FLARE_ID else None
             )
-            print(f"✅ Submitted (force submit) from r/{post.subreddit.display_name}")
+            print(f"✅ Submitted (link post) from r/{post.subreddit.display_name}")
         else:
+            # Always crosspost for text/self posts
             crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post}
             if CROSSPOST_FLARE_ID:
                 crosspost_kwargs["flair_id"] = CROSSPOST_FLARE_ID
             post.crosspost(**crosspost_kwargs)
-            print(f"✅ Crossposted from r/{post.subreddit.display_name}")
+            print(f"✅ Crossposted (text/self post) from r/{post.subreddit.display_name}")
 
-        posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
         time.sleep(random.randint(2,5))
 
     save_posted_ids(posted_ids)
