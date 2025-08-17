@@ -166,6 +166,9 @@ try:
         print(f"  Title to post: {title_to_post}")
         print(f"  Skip: {skip}")
 
+        # even if skipped, save to posted_ids
+        posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
+        
         if skip:
             print("⏭ Skipped due to similarity with recent posts")
             continue
@@ -174,7 +177,7 @@ try:
             reddit.subreddit(TARGET_SUB).submit(
                 title=title_to_post,
                 url=post.url,
-                flair_id=CROSSPOST_FLARE_ID if CROSSPOST_FLAIR_ID else None
+                flair_id=CROSSPOST_FLARE_ID if CROSSPOST_FLARE_ID else None
             )
             print(f"✅ Submitted (force submit) from r/{post.subreddit.display_name}")
         else:
