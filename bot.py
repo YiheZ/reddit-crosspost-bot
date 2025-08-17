@@ -6,8 +6,14 @@ import time
 import random
 import requests
 from datetime import datetime, timedelta, timezone
+# -----------------------------
+# Translation imports
+# -----------------------------
 from gemini_translate import translate_with_gemini
 
+# -----------------------------
+# Helper: safely load JSON env
+# -----------------------------
 def load_json_env(env_name, default):
     raw = os.getenv(env_name, "").strip()
     if not raw:
@@ -41,23 +47,23 @@ HEADERS = {
 }
 
 # -----------------------------
-# Configuration variables (normalize to lowercase)
+# Configuration variables
 # -----------------------------
-SOURCE_SUBS = [s.strip().lower() for s in os.getenv("SOURCE_SUBS", "news").split(",")]
-TARGET_SUB = os.getenv("TARGET_SUB", "yoursub").lower()
+SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
+TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 
 INCLUDE_KEYWORDS = load_json_env("INCLUDE_KEYWORDS", [])
 EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", [])
 
 CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID", "")
-TRANSLATE_SUBS = [s.strip().lower() for s in os.getenv("TRANSLATE_SUBS", "").split(",")]
+TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
-TRANSLATE_SOURCE_LANGS = {k.lower(): v for k, v in load_json_env("TRANSLATE_SOURCE_LANGS", {}).items()}
+TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
 
-FORCE_SUBMIT_SUBS = [s.strip().lower() for s in os.getenv("FORCE_SUBMIT_SUBS", "").split(",")]
+FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
 
 try:
-    LIMIT_POSTS_DICT = {k.lower(): v for k, v in load_json_env("LIMIT_POSTS", {}).items()}
+    LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", {})
 except Exception:
     LIMIT_POSTS_DICT = {}
 DEFAULT_LIMIT_POSTS = 3
@@ -88,11 +94,21 @@ print(f"🔹 Loaded {len(posted_ids)} previously posted IDs.")
 # Helper functions
 # -----------------------------
 def match_keywords(title: str) -> bool:
+    """
+    Return True if the post title matches keyword filters.
+    - If INCLUDE_KEYWORDS is non-empty → must contain at least one.
+    - Must NOT contain any EXCLUDE_KEYWORDS.
+    """
     title_lower = title.lower()
+
+    # Exclude filter
     if any(kw.lower() in title_lower for kw in EXCLUDE_KEYWORDS if kw):
         return False
+
+    # Include filter
     if INCLUDE_KEYWORDS:
         return any(kw.lower() in title_lower for kw in INCLUDE_KEYWORDS if kw)
+
     return True
 
 def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
@@ -101,92 +117,103 @@ def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
     posts = [p for p in subreddit.new(limit=max_candidates)
              if datetime.fromtimestamp(p.created_utc, timezone.utc) >= one_day_ago]
     posts.sort(key=lambda p: p.score, reverse=True)
-    print(f"🔹 r/{subreddit_name}: fetched {len(posts)} posts from last 24h, top {top_limit} by score.")
     return posts[:top_limit]
 
 # -----------------------------
-# Main logic with debug logs
+# Main crosspost logic with logging
 # -----------------------------
 try:
-    all_posts_to_post = []
-    sub_limits = {}
-    
-    # Step 1: Collect posts per sub, filter & respect limits
+    # Collect all posts that need translation across all subs first
+    all_translation_candidates = []
+
+    # Mapping post.id -> post
+    all_posts_map = {}
+
     for sub in SOURCE_SUBS:
+        sub = sub.strip()
         posts = get_top_posts_past_day(sub, max_candidates=500, top_limit=100)
         sub_limit = LIMIT_POSTS_DICT.get(sub, DEFAULT_LIMIT_POSTS)
-        sub_limits[sub] = sub_limit
 
-        filtered = [
-            p for p in posts
-            if p.id not in posted_ids
-            and p.subreddit.display_name.lower() != TARGET_SUB
-            and match_keywords(p.title)
-        ][:sub_limit]
+        print(f"🔹 r/{sub}: fetched {len(posts)} posts from last 24h, top 100 by score.")
 
-        print(f"🔹 r/{sub}: {len(filtered)} posts selected for posting (limit {sub_limit}).")
-        for p in filtered:
-            print(f"   • {p.id} | {p.title}")
+        candidates = []
+        for post in posts:
+            reason_skipped = None
+            if post.id in posted_ids:
+                reason_skipped = "already posted"
+            elif post.subreddit.display_name.lower() == TARGET_SUB.lower():
+                reason_skipped = f"from target subreddit {TARGET_SUB}"
+            elif not match_keywords(post.title):
+                reason_skipped = "excluded by keywords"
 
-        all_posts_to_post.extend(filtered)
+            if reason_skipped:
+                print(f"⚠️ Skipped ({reason_skipped}): {post.title}")
+                continue
 
-    # Step 2: Batch translate only posts needing translation
-    posts_for_translation = [p for p in all_posts_to_post if p.subreddit.display_name.lower() in TRANSLATE_SUBS]
-    title_map = {}
-    if posts_for_translation:
-        titles_to_translate = [p.title for p in posts_for_translation]
-        src_langs = [TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower()) for p in posts_for_translation]
-        source_lang = src_langs[0] if all(x == src_langs[0] for x in src_langs) else None
+            candidates.append(post)
+            all_posts_map[post.id] = post
 
-        print(f"🔹 Translating {len(posts_for_translation)} posts with Gemini...")
-        result = translate_with_gemini(
-            titles_to_translate,
-            target_lang=TRANSLATE_TARGET_LANG,
-            source_lang=source_lang
-        )
-        if "texts" in result:
-            title_map = {p.id: result["texts"][i] for i, p in enumerate(posts_for_translation)}
-            for p in posts_for_translation:
-                print(f"   • Translated {p.id}: {title_map[p.id]}")
-        else:
-            print(f"⚠️ Translation error: {result.get('error')} (posting original titles)")
-
-    # Step 3: Post each sub respecting limits
-    for sub in SOURCE_SUBS:
-        sub_posts = [p for p in all_posts_to_post if p.subreddit.display_name.lower() == sub]
-        crossposted = 0
-        sub_limit = sub_limits.get(sub, DEFAULT_LIMIT_POSTS)
-
-        print(f"🔹 Posting to r/{sub} (limit {sub_limit})...")
-        for post in sub_posts:
-            title_to_post = title_map.get(post.id, post.title)
-
-            if sub in FORCE_SUBMIT_SUBS:
-                reddit.subreddit(TARGET_SUB).submit(
-                    title=title_to_post,
-                    url=post.url,
-                    flair_id=CROSSPOST_FLAIR_ID if CROSSPOST_FLAIR_ID else None
-                )
-                print(f"✅ Submitted (force submit) from r/{sub}: {title_to_post}")
-            else:
-                crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
-                if CROSSPOST_FLAIR_ID:
-                    crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
-                if sub in TRANSLATE_SUBS:
-                    crosspost_kwargs["title"] = title_to_post
-                post.crosspost(**crosspost_kwargs)
-                print(f"✅ Crossposted from r/{sub}: {title_to_post}")
-
-            posted_ids.add(post.id)
-            crossposted += 1
-            time.sleep(random.randint(2, 5))
-            if crossposted >= sub_limit:
+            if len(candidates) >= sub_limit:
                 break
 
-        time.sleep(random.randint(5, 10))
+        print(f"🔹 r/{sub}: {len(candidates)} posts selected for posting (limit {sub_limit}).")
+        all_translation_candidates.extend(candidates)
 
+    # -----------------------------
+    # Batch translation with Gemini
+    # -----------------------------
+    title_map = {}
+    if all_translation_candidates:
+        posts_needing_translation = [
+            p for p in all_translation_candidates if p.subreddit.display_name.lower() in [s.lower() for s in TRANSLATE_SUBS]
+        ]
+        if posts_needing_translation:
+            titles_to_translate = [p.title for p in posts_needing_translation]
+            # Determine source languages for each post
+            source_langs = [TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower()) for p in posts_needing_translation]
+            result = translate_with_gemini(
+                titles_to_translate,
+                target_lang=TRANSLATE_TARGET_LANG,
+                source_langs=source_langs
+            )
+            if "texts" in result:
+                title_map = {p.id: result["texts"][i] for i, p in enumerate(posts_needing_translation)}
+            else:
+                print(f"⚠️ Translation error: {result.get('error')} (posting original titles)")
+
+    # -----------------------------
+    # Post to Reddit
+    # -----------------------------
+    for post in all_posts_map.values():
+        title_to_post = title_map.get(post.id, post.title)
+        sub = post.subreddit.display_name
+
+        if sub.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
+            reddit.subreddit(TARGET_SUB).submit(
+                title=title_to_post,
+                url=post.url,
+                flair_id=CROSSPOST_FLAIR_ID if CROSSPOST_FLAIR_ID else None
+            )
+            print(f"✅ Submitted (force submit) from r/{sub}: {title_to_post}")
+        else:
+            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
+            if CROSSPOST_FLAIR_ID:
+                crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
+            if sub.lower() in [s.lower() for s in TRANSLATE_SUBS]:
+                crosspost_kwargs["title"] = title_to_post
+            post.crosspost(**crosspost_kwargs)
+            print(f"✅ Crossposted from r/{sub}: {title_to_post}")
+
+        posted_ids.add(post.id)
+        # Random sleep 2–5 seconds between posts
+        time.sleep(random.randint(2, 5))
+
+    # -----------------------------
+    # Save posted IDs
+    # -----------------------------
     save_posted_ids(posted_ids)
     print("✅ Done")
+
 except Exception as e:
     print(f"❌ Fatal error: {e}")
     sys.exit(1)
