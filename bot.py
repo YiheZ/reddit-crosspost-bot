@@ -6,7 +6,6 @@ import time
 import random
 import requests
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
 from gemini_translate import translate_and_filter_with_gemini
 
 # -----------------------------
@@ -115,9 +114,11 @@ def get_recent_target_posts(hours=24):
              if datetime.fromtimestamp(p.created_utc, timezone.utc) >= cutoff]
     return [p.title for p in posts]
 
-def is_external_link(url):
-    hostname = urlparse(url).hostname or ""
-    return not hostname.endswith("reddit.com")
+def is_external_link(post):
+    url = post.url
+    # treat reddit-hosted content as internal: reddit.com, i.redd.it, v.redd.it, redditmedia.com
+    internal_domains = ["reddit.com", "i.redd.it", "v.redd.it", "redditmedia.com"]
+    return not any(d in url for d in internal_domains)
 
 # -----------------------------
 # Main bot logic
@@ -168,29 +169,30 @@ try:
         print(f"  Title to post: {title_to_post}")
         print(f"  Skip: {skip}")
 
+        # Determine action: submit only for true external links
         if skip:
             print("⏭ Skipped due to similarity with recent posts")
+        elif is_external_link(post) or post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
+            reddit.subreddit(TARGET_SUB).submit(
+                title=title_to_post,
+                url=post.url,
+                flair_id=CROSSPOST_FLARE_ID if CROSSPOST_FLARE_ID else None
+            )
+            print(f"✅ Submitted (link/external) from r/{post.subreddit.display_name}")
         else:
-            if is_external_link(post.url):
-                reddit.subreddit(TARGET_SUB).submit(
-                    title=title_to_post,
-                    url=post.url,
-                    flair_id=CROSSPOST_FLARE_ID if CROSSPOST_FLARE_ID else None
-                )
-                print(f"✅ Submitted (external link) from r/{post.subreddit.display_name}")
-            else:
-                crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post}
-                if CROSSPOST_FLARE_ID:
-                    crosspost_kwargs["flair_id"] = CROSSPOST_FLARE_ID
-                post.crosspost(**crosspost_kwargs)
-                print(f"✅ Crossposted (Reddit-hosted media/self post) from r/{post.subreddit.display_name}")
+            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post}
+            if CROSSPOST_FLARE_ID:
+                crosspost_kwargs["flair_id"] = CROSSPOST_FLARE_ID
+            post.crosspost(**crosspost_kwargs)
+            print(f"✅ Crossposted from r/{post.subreddit.display_name}")
 
-        # Save posted ID regardless of skip or submit
+        # Always save posted ID
         posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
         time.sleep(random.randint(2,5))
 
     save_posted_ids(posted_ids)
     print("✅ Done")
+
 except Exception as e:
     print(f"❌ Fatal error: {e}")
     sys.exit(1)
