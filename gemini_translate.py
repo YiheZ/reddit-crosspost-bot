@@ -10,43 +10,62 @@ if GEMINI_API_KEY:
 MODEL_NAME = "gemini-2.5-flash"
 
 def _sanitize_json_output(text: str) -> str:
+    """Remove code fences and extra whitespace before parsing JSON."""
     text = text.strip()
     text = re.sub(r"^```json\s*|\s*```$", "", text, flags=re.I)
     return text
 
-def translate_and_filter_with_gemini(candidates, recent_titles, target_lang="ZH", source_langs=None):
+def _build_prompt(candidates, recent_titles, target_lang="ZH"):
     """
-    candidates: list of dicts {"id": post_id, "title": title, "source_lang": "EN"/None}
-    recent_titles: list of strings (already posted in target sub)
-    Returns: dict of post_id -> {"title_translated": str, "skip": bool}
+    Build a Gemini prompt to translate and filter titles.
+    candidates: list of dicts {"id": str, "title": str, "source_lang": str or None}
+    recent_titles: list of titles already posted in target subreddit
     """
-    prompt_lines = []
-    for i, c in enumerate(candidates):
-        src_lang = c.get("source_lang")
-        if src_lang:
-            prompt_lines.append(f"{i+1}. [{src_lang}] {c['title']}")
-        else:
-            prompt_lines.append(f"{i+1}. {c['title']}")
-    joined_candidates = "\n".join(prompt_lines)
-    recent_json = json.dumps(recent_titles, ensure_ascii=False)
+    lines = []
+    for c in candidates:
+        src = f"[{c['source_lang']}]" if c.get("source_lang") else ""
+        lines.append(f"{c['id']}: {src} {c['title']}")
+    recent_joined = "\n".join(recent_titles)
 
-    prompt = (
-        f"You are a professional translator and content filter for a subreddit.\n"
-        f"Input candidate post titles:\n{joined_candidates}\n\n"
-        f"These titles have been posted in the target subreddit recently:\n{recent_json}\n\n"
-        f"Task: For each candidate title, do the following:\n"
-        f"1. Translate it into {target_lang} using the target language's usual phrasing for social media/news headlines.\n"
-        f"2. Determine if it is semantically very similar to any recent post (ignore minor wording differences).\n"
-        f"3. Return ONLY a JSON array with objects like {{\"id\": candidate_id, \"title_translated\": ..., \"skip\": true/false}}, preserving order.\n"
-        f"Do not add any extra text, numbers, or punctuation. Do not skip translation unless source language equals target language.\n"
+    return (
+        f"You are a professional translator and content reviewer for subreddit posts.\n"
+        f"Translate the following titles into {target_lang} (or skip translation if already in {target_lang}).\n"
+        f"Check similarity against these recent titles already posted in the target subreddit:\n"
+        f"{recent_joined}\n\n"
+        f"For each candidate, return a JSON array of objects with:\n"
+        f"  - id: the post id\n"
+        f"  - title_translated: the translated title\n"
+        f"  - skip: true if meaning is basically the same as any recent post, false otherwise\n"
+        f"Keep the translated title concise and suitable for a post title.\n"
+        f"Return ONLY JSON."
+        f"\n\nCandidates:\n" + "\n".join(lines)
     )
+
+def translate_and_filter_with_gemini(candidates, recent_titles, target_lang="ZH"):
+    if not GEMINI_API_KEY:
+        return {"error": "GEMINI_API_KEY not configured"}
+    if not candidates:
+        return {}
+
+    prompt = _build_prompt(candidates, recent_titles, target_lang)
 
     try:
         model = genai.GenerativeModel(MODEL_NAME)
         response = model.generate_content(prompt)
         output = _sanitize_json_output(response.text)
-        result = json.loads(output)
-        output_map = {item["id"]: {"title_translated": item["title_translated"], "skip": item["skip"]} for item in result}
-        return output_map
+
+        try:
+            parsed = json.loads(output)
+            # convert to dict keyed by post id
+            result = {}
+            for item in parsed:
+                pid = item["id"]
+                result[pid] = {
+                    "title_translated": item["title_translated"],
+                    "skip": item.get("skip", False)
+                }
+            return result
+        except json.JSONDecodeError:
+            return {"error": f"Failed to parse JSON: {output}"}
     except Exception as e:
         return {"error": str(e)}
