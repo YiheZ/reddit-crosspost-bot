@@ -82,6 +82,7 @@ def save_posted_ids(posted_ids):
         raise RuntimeError(f"Failed to save posted IDs: {response.status_code} {response.text}")
 
 posted_ids = load_posted_ids()
+print(f"🔹 Loaded {len(posted_ids)} previously posted IDs.")
 
 # -----------------------------
 # Helper functions
@@ -100,10 +101,11 @@ def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
     posts = [p for p in subreddit.new(limit=max_candidates)
              if datetime.fromtimestamp(p.created_utc, timezone.utc) >= one_day_ago]
     posts.sort(key=lambda p: p.score, reverse=True)
+    print(f"🔹 r/{subreddit_name}: fetched {len(posts)} posts from last 24h, top {top_limit} by score.")
     return posts[:top_limit]
 
 # -----------------------------
-# Main logic
+# Main logic with debug logs
 # -----------------------------
 try:
     all_posts_to_post = []
@@ -120,7 +122,11 @@ try:
             if p.id not in posted_ids
             and p.subreddit.display_name.lower() != TARGET_SUB
             and match_keywords(p.title)
-        ][:sub_limit]  # Respect per-sub limit here
+        ][:sub_limit]
+
+        print(f"🔹 r/{sub}: {len(filtered)} posts selected for posting (limit {sub_limit}).")
+        for p in filtered:
+            print(f"   • {p.id} | {p.title}")
 
         all_posts_to_post.extend(filtered)
 
@@ -129,10 +135,10 @@ try:
     title_map = {}
     if posts_for_translation:
         titles_to_translate = [p.title for p in posts_for_translation]
-        # If all posts have same source lang, pass it; else None
         src_langs = [TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower()) for p in posts_for_translation]
         source_lang = src_langs[0] if all(x == src_langs[0] for x in src_langs) else None
 
+        print(f"🔹 Translating {len(posts_for_translation)} posts with Gemini...")
         result = translate_with_gemini(
             titles_to_translate,
             target_lang=TRANSLATE_TARGET_LANG,
@@ -140,8 +146,10 @@ try:
         )
         if "texts" in result:
             title_map = {p.id: result["texts"][i] for i, p in enumerate(posts_for_translation)}
+            for p in posts_for_translation:
+                print(f"   • Translated {p.id}: {title_map[p.id]}")
         else:
-            print(f"Translation error: {result.get('error')} (posting original titles)")
+            print(f"⚠️ Translation error: {result.get('error')} (posting original titles)")
 
     # Step 3: Post each sub respecting limits
     for sub in SOURCE_SUBS:
@@ -149,6 +157,7 @@ try:
         crossposted = 0
         sub_limit = sub_limits.get(sub, DEFAULT_LIMIT_POSTS)
 
+        print(f"🔹 Posting to r/{sub} (limit {sub_limit})...")
         for post in sub_posts:
             title_to_post = title_map.get(post.id, post.title)
 
@@ -170,7 +179,6 @@ try:
 
             posted_ids.add(post.id)
             crossposted += 1
-
             time.sleep(random.randint(2, 5))
             if crossposted >= sub_limit:
                 break
