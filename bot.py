@@ -6,7 +6,10 @@ import time
 import random
 import requests
 from datetime import datetime, timedelta, timezone
-from deepl_translate import translate_with_deepl
+# -----------------------------
+# Translation imports
+# -----------------------------
+from gemini_translate import translate_with_gemini
 
 # -----------------------------
 # Helper: safely load JSON env
@@ -90,21 +93,11 @@ posted_ids = load_posted_ids()
 # Helper functions
 # -----------------------------
 def match_keywords(title: str) -> bool:
-    """
-    Return True if the post title matches keyword filters.
-    - If INCLUDE_KEYWORDS is non-empty → must contain at least one.
-    - Must NOT contain any EXCLUDE_KEYWORDS.
-    """
     title_lower = title.lower()
-
-    # Exclude filter
     if any(kw.lower() in title_lower for kw in EXCLUDE_KEYWORDS if kw):
         return False
-
-    # Include filter
     if INCLUDE_KEYWORDS:
         return any(kw.lower() in title_lower for kw in INCLUDE_KEYWORDS if kw)
-
     return True
 
 def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
@@ -116,44 +109,59 @@ def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
     return posts[:top_limit]
 
 # -----------------------------
-# Main crosspost logic
+# Main crosspost logic with Gemini batching across all subs
 # -----------------------------
 try:
+    # Step 1: Collect all posts from all source subs
+    all_posts = []
+    sub_limits = {}
     for sub in SOURCE_SUBS:
         posts = get_top_posts_past_day(sub.strip(), max_candidates=500, top_limit=100)
-        crossposted = 0
-
-        # Determine subreddit-specific limit
         sub_limit = LIMIT_POSTS_DICT.get(sub.strip(), DEFAULT_LIMIT_POSTS)
+        sub_limits[sub.strip()] = sub_limit
+        all_posts.extend(posts)
 
-        for post in posts:
-            if post.id in posted_ids:
-                continue
+    # Step 2: Filter out posts already posted or from target subreddit
+    posts_to_translate = [
+        p for p in all_posts
+        if p.id not in posted_ids
+        and p.subreddit.display_name.lower() != TARGET_SUB.lower()
+        and match_keywords(p.title)
+    ]
 
-            # Skip posts that originally belong to the target subreddit
-            if post.subreddit.display_name.lower() == TARGET_SUB.lower():
-                continue
+    # Step 3: Batch translate using Gemini
+    title_map = {}
+    if posts_to_translate:
+        subs_for_translation = set(sub.strip() for sub in SOURCE_SUBS)
+        # Only translate posts from subs that require translation
+        posts_for_translation = [
+            p for p in posts_to_translate if p.subreddit.display_name in TRANSLATE_SUBS
+        ]
+        if posts_for_translation:
+            titles_to_translate = [p.title for p in posts_for_translation]
+            # Use first post's subreddit as source_lang reference if needed
+            source_lang = None
+            if TRANSLATE_SOURCE_LANGS:
+                source_lang = TRANSLATE_SOURCE_LANGS.get(posts_for_translation[0].subreddit.display_name)
+            result = translate_with_gemini(
+                titles_to_translate,
+                target_lang=TRANSLATE_TARGET_LANG,
+                source_lang=source_lang
+            )
+            if "texts" in result:
+                title_map = {p.id: result["texts"][i] for i, p in enumerate(posts_for_translation)}
+            else:
+                print(f"Translation error: {result.get('error')} (posting original titles)")
 
-            if not match_keywords(post.title):
-                continue
+    # Step 4: Post each subreddit respecting limits
+    for sub in SOURCE_SUBS:
+        sub_posts = [p for p in posts_to_translate if p.subreddit.display_name.lower() == sub.strip().lower()]
+        crossposted = 0
+        sub_limit = sub_limits.get(sub.strip(), DEFAULT_LIMIT_POSTS)
 
-            title_to_post = post.title
+        for post in sub_posts:
+            title_to_post = title_map.get(post.id, post.title)
 
-            # Translate title if subreddit requires translation
-            if sub.strip() in TRANSLATE_SUBS:
-                source_lang = TRANSLATE_SOURCE_LANGS.get(sub.strip())
-                result = translate_with_deepl(
-                    post.title,
-                    target_lang=TRANSLATE_TARGET_LANG,
-                    source_lang=source_lang
-                )
-                if "error" not in result:
-                    title_to_post = result["text"]
-                    print(f"Translated '{post.title}' -> '{title_to_post}' (detected: {result.get('detected_language')})")
-                else:
-                    print(f"Translation error: {result['error']} (posting original title)")
-
-            # Decide between submit() or crosspost()
             if sub.strip() in FORCE_SUBMIT_SUBS:
                 reddit.subreddit(TARGET_SUB).submit(
                     title=title_to_post,
@@ -172,18 +180,17 @@ try:
 
             posted_ids.add(post.id)
             crossposted += 1
-
-            # Random sleep 2–5 seconds between posts
             time.sleep(random.randint(2, 5))
 
             if crossposted >= sub_limit:
                 break
 
-        # Random sleep 5–10 seconds after finishing a subreddit
         time.sleep(random.randint(5, 10))
 
+    # Step 5: Save posted IDs
     save_posted_ids(posted_ids)
     print("✅ Done")
+
 except Exception as e:
     print(f"❌ Fatal error: {e}")
     sys.exit(1)
