@@ -19,10 +19,10 @@ def _sanitize_json_output(text: str) -> str:
 
 def _build_prompt(texts, target_lang="ZH", source_langs=None):
     """
-    Build prompt for Gemini batch translation.
-    If source_langs is a list, use corresponding source language per text.
-    These texts are subreddit post titles, so translation should be concise, 
-    natural, and readable as Reddit titles in the target language.
+    Build prompt for Gemini batch translation for subreddit post titles.
+    - texts: list of Reddit post titles
+    - target_lang: target language code, e.g., ZH
+    - source_langs: optional list of source languages for each text
     """
     joined_lines = []
     for i, t in enumerate(texts):
@@ -36,10 +36,12 @@ def _build_prompt(texts, target_lang="ZH", source_langs=None):
     joined = "\n".join(joined_lines)
 
     return (
-        f"You are a professional translation engine.\n"
+        f"You are a professional translator for online content.\n"
         f"Translate the following subreddit post titles into {target_lang}.\n"
-        f"Keep the same tone and style, concise and natural like a native speaker would post on Reddit.\n"
-        f"Return ONLY a JSON array of translations, nothing else.\n\n{joined}"
+        f"Use the target language's usual conventions, punctuation, and phrasing for online headlines.\n"
+        f"Keep the tone concise, natural, and readable as if a native speaker wrote it for a social media post or news headline.\n"
+        f"Do not translate numbers, proper nouns, or units unless necessary for clarity.\n"
+        f"Return ONLY a JSON array of translated titles, in the same order as the input.\n\n{joined}"
     )
 
 def translate_with_gemini(texts, target_lang="ZH", source_langs=None):
