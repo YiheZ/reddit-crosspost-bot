@@ -40,7 +40,8 @@ def _build_prompt(texts, target_lang="ZH", source_langs=None):
         f"Translate the following subreddit post titles into {target_lang}.\n"
         f"Use the target language's usual conventions, punctuation, and phrasing for online headlines.\n"
         f"Keep the tone concise, natural, and readable as if a native speaker wrote it for a social media post or news headline.\n"
-        f"Do not translate numbers, proper nouns, or units unless necessary for clarity.\n"
+        f"Convert all measurement units and terms to what a typical {target_lang} speaker would expect (e.g., gallons → liters, miles → kilometers, pounds → kilograms).\n"
+        f"Keep numbers and proper nouns as-is unless unit conversion is needed for clarity.\n"
         f"Return ONLY a JSON array of translated titles, in the same order as the input.\n\n{joined}"
     )
 
