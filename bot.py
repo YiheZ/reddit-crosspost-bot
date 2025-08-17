@@ -6,20 +6,20 @@ import time
 import random
 import requests
 from datetime import datetime, timedelta, timezone
-from deepl_translate import translate_with_deepl
+from gemini_translate import translate_with_gemini
 
 # -----------------------------
-# Helper to safely load JSON env variables
+# Helper: safely load JSON env
 # -----------------------------
-def load_json_env(var_name, default="[]"):
-    val = os.getenv(var_name, "").strip()
-    if not val:
-        val = default
+def load_json_env(env_name, default):
+    raw = os.getenv(env_name, "").strip()
+    if not raw:
+        return default
     try:
-        return json.loads(val)
+        return json.loads(raw)
     except json.JSONDecodeError:
-        print(f"⚠️ Warning: Invalid JSON for {var_name}, using default {default}")
-        return json.loads(default)
+        print(f"⚠️ Invalid JSON in {env_name}, using default {default}")
+        return default
 
 # -----------------------------
 # Reddit API setup
@@ -47,16 +47,22 @@ HEADERS = {
 # Configuration variables
 # -----------------------------
 SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
-TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
-FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 
-EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", "[]")
-INCLUDE_KEYWORDS = load_json_env("INCLUDE_KEYWORDS", "[]")
-CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID")
+INCLUDE_KEYWORDS = load_json_env("INCLUDE_KEYWORDS", [])
+EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", [])
+
+CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID", "")
+TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
-TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", "{}")
-LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", "{}")
+TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
+
+FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
+
+try:
+    LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", {})
+except Exception:
+    LIMIT_POSTS_DICT = {}
 DEFAULT_LIMIT_POSTS = 3
 
 # -----------------------------
@@ -65,15 +71,19 @@ DEFAULT_LIMIT_POSTS = 3
 def load_posted_ids():
     response = requests.get(GIST_API_URL, headers=HEADERS)
     if response.status_code != 200:
-        raise RuntimeError(f"Failed to load posted IDs: {response.status_code} {response.text}")
+        print(f"⚠️ Failed to load posted IDs: {response.status_code} {response.text}")
+        return {}
     gist_data = response.json()
     files = gist_data.get("files", {})
     content = files.get("posted_ids.json", {}).get("content", "{}")
     data = json.loads(content)
-    # Remove posts older than 7 days automatically
+    # Clean old posts (>7 days)
     now_ts = int(datetime.now(timezone.utc).timestamp())
-    posted = {pid: ts for pid, ts in data.get("posted_ids", {}).items() if now_ts - ts <= 7 * 24 * 3600}
-    return posted
+    clean_data = {}
+    for pid, ts in data.get("posted_ids", {}).items():
+        if now_ts - ts <= 7 * 24 * 3600:
+            clean_data[pid] = ts
+    return clean_data
 
 def save_posted_ids(posted_ids):
     payload = {"files": {"posted_ids.json": {"content": json.dumps({"posted_ids": posted_ids}, indent=2)}}}
@@ -82,6 +92,7 @@ def save_posted_ids(posted_ids):
         raise RuntimeError(f"Failed to save posted IDs: {response.status_code} {response.text}")
 
 posted_ids = load_posted_ids()
+print(f"🔹 Loaded {len(posted_ids)} previously posted IDs.")
 
 # -----------------------------
 # Helper functions
@@ -106,64 +117,55 @@ def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
 # Main crosspost logic
 # -----------------------------
 try:
+    # Fetch and filter all posts first
+    all_posts = []
     for sub in SOURCE_SUBS:
         posts = get_top_posts_past_day(sub.strip(), max_candidates=500, top_limit=100)
-        crossposted = 0
-        sub_limit = LIMIT_POSTS_DICT.get(sub.strip(), DEFAULT_LIMIT_POSTS)
+        limit = LIMIT_POSTS_DICT.get(sub.strip(), DEFAULT_LIMIT_POSTS)
+        filtered = [p for p in posts if p.id not in posted_ids
+                    and p.subreddit.display_name.lower() != TARGET_SUB.lower()
+                    and match_keywords(p.title)]
+        filtered = filtered[:limit]
+        print(f"🔹 r/{sub.strip()}: fetched {len(posts)} posts, {len(filtered)} selected for posting (limit {limit}).")
+        all_posts.extend(filtered)
 
-        for post in posts:
-            if post.id in posted_ids:
-                continue
-            if post.subreddit.display_name.lower() == TARGET_SUB.lower():
-                continue
-            if not match_keywords(post.title):
-                continue
+    # Batch translation for all posts that need translation
+    posts_to_translate = [p for p in all_posts if p.subreddit.display_name.lower() in [s.lower() for s in TRANSLATE_SUBS]]
+    title_map = {}
+    if posts_to_translate:
+        texts = [p.title for p in posts_to_translate]
+        source_langs = [TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower(), None) for p in posts_to_translate]
+        result = translate_with_gemini(texts, target_lang=TRANSLATE_TARGET_LANG, source_langs=source_langs)
+        if "texts" in result:
+            title_map = {p.id: result["texts"][i] for i, p in enumerate(posts_to_translate)}
+        else:
+            print(f"Translation error: {result.get('error')} (posting original titles)")
 
-            title_to_post = post.title
+    # Post each
+    for post in all_posts:
+        title_to_post = title_map.get(post.id, post.title)
+        print(f"Posting: [{post.subreddit.display_name}] {title_to_post}")
 
-            # Translate title if needed
-            if sub.strip() in TRANSLATE_SUBS:
-                source_lang = TRANSLATE_SOURCE_LANGS.get(sub.strip())
-                result = translate_with_deepl(
-                    post.title,
-                    target_lang=TRANSLATE_TARGET_LANG,
-                    source_lang=source_lang
-                )
-                if "error" not in result:
-                    title_to_post = result["text"]
-                    print(f"Translated '{post.title}' -> '{title_to_post}' (detected: {result.get('detected_language')})")
-                else:
-                    print(f"Translation error: {result['error']} (posting original title)")
+        if post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
+            reddit.subreddit(TARGET_SUB).submit(
+                title=title_to_post,
+                url=post.url,
+                flair_id=CROSSPOST_FLAIR_ID if CROSSPOST_FLAIR_ID else None
+            )
+            print(f"✅ Submitted (force submit) from r/{post.subreddit.display_name}: {title_to_post}")
+        else:
+            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
+            if CROSSPOST_FLAIR_ID:
+                crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
+            crosspost_kwargs["title"] = title_to_post
+            post.crosspost(**crosspost_kwargs)
+            print(f"✅ Crossposted from r/{post.subreddit.display_name}: {title_to_post}")
 
-            # Submit or crosspost
-            if sub.strip() in FORCE_SUBMIT_SUBS:
-                reddit.subreddit(TARGET_SUB).submit(
-                    title=title_to_post,
-                    url=post.url,
-                    flair_id=CROSSPOST_FLAIR_ID if CROSSPOST_FLAIR_ID else None
-                )
-                print(f"✅ Submitted (force submit) from r/{sub}: {title_to_post}")
-            else:
-                crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
-                if CROSSPOST_FLAIR_ID:
-                    crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
-                if sub.strip() in TRANSLATE_SUBS:
-                    crosspost_kwargs["title"] = title_to_post
-                post.crosspost(**crosspost_kwargs)
-                print(f"✅ Crossposted from r/{sub}: {title_to_post}")
-
-            posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
-            crossposted += 1
-
-            time.sleep(random.randint(2, 5))
-            if crossposted >= sub_limit:
-                break
-
-        time.sleep(random.randint(5, 10))
+        posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
+        time.sleep(random.randint(2, 5))
 
     save_posted_ids(posted_ids)
     print("✅ Done")
-
 except Exception as e:
     print(f"❌ Fatal error: {e}")
     sys.exit(1)
