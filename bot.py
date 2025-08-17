@@ -62,7 +62,7 @@ try:
     LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", {})
 except Exception:
     LIMIT_POSTS_DICT = {}
-DEFAULT_LIMIT_POSTS = 3
+DEFAULT_LIMIT_POSTS = 1
 
 # -----------------------------
 # Load posted IDs from Gist
