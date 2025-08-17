@@ -144,13 +144,18 @@ try:
     # Get recent target posts
     recent_titles = get_recent_target_posts(hours=24)
 
-    # Prepare candidates for Gemini
+    # Prepare candidates for Gemini with subreddit info
     candidates = []
     for p in all_posts:
         orig_title = get_original_post_title(p)
         src_lang = TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower())
         skip_translation = src_lang and src_lang.upper() == TRANSLATE_TARGET_LANG.upper()
-        candidates.append({"id": p.id, "title": orig_title, "source_lang": None if skip_translation else src_lang})
+        candidates.append({
+            "id": p.id,
+            "title": orig_title,
+            "source_lang": None if skip_translation else src_lang,
+            "subreddit": p.subreddit.display_name
+        })
 
     # Gemini translate + filter
     title_map = {}
@@ -179,7 +184,6 @@ try:
 
         if skip and not external:
             print("⏭ Skipped due to similarity with recent posts")
-            # Still save IDs
             posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
             continue
 
