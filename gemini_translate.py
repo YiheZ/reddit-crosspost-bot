@@ -21,6 +21,8 @@ def _build_prompt(texts, target_lang="ZH", source_langs=None):
     """
     Build prompt for Gemini batch translation.
     If source_langs is a list, use corresponding source language per text.
+    These texts are subreddit post titles, so translation should be concise, 
+    natural, and readable as Reddit titles in the target language.
     """
     joined_lines = []
     for i, t in enumerate(texts):
@@ -35,8 +37,8 @@ def _build_prompt(texts, target_lang="ZH", source_langs=None):
 
     return (
         f"You are a professional translation engine.\n"
-        f"Translate the following texts into {target_lang}.\n"
-        f"Keep the same tone and style, make it sound natural like a native speaker.\n"
+        f"Translate the following subreddit post titles into {target_lang}.\n"
+        f"Keep the same tone and style, concise and natural like a native speaker would post on Reddit.\n"
         f"Return ONLY a JSON array of translations, nothing else.\n\n{joined}"
     )
 
