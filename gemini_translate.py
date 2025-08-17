@@ -17,7 +17,7 @@ def _sanitize_json_output(text: str) -> str:
 
 def _build_prompt(candidates, recent_titles, target_lang="ZH"):
     """
-    Build a Gemini prompt to translate and filter titles.
+    Build a Gemini prompt to translate and filter Reddit post titles.
     candidates: list of dicts {"id": str, "title": str, "source_lang": str or None}
     recent_titles: list of titles already posted in target subreddit
     """
@@ -25,20 +25,22 @@ def _build_prompt(candidates, recent_titles, target_lang="ZH"):
     for c in candidates:
         src = f"[{c['source_lang']}]" if c.get("source_lang") else ""
         lines.append(f"{c['id']}: {src} {c['title']}")
+    
     recent_joined = "\n".join(recent_titles)
 
     return (
-        f"You are a professional translator and content reviewer for subreddit posts.\n"
-        f"Translate the following titles into {target_lang} (or skip translation if already in {target_lang}).\n"
+        f"You are a professional translator and content reviewer for Reddit posts, primarily news.\n"
+        f"Translate the following titles into {target_lang}, using natural, native-style language.\n"
+        f"Convert any measurements to local units (e.g., kg, km, °C, etc.) if applicable.\n"
+        f"Do NOT add a full stop (。) at the end; make it concise and suitable as a Reddit title.\n"
         f"Check similarity against these recent titles already posted in the target subreddit:\n"
         f"{recent_joined}\n\n"
         f"For each candidate, return a JSON array of objects with:\n"
         f"  - id: the post id\n"
         f"  - title_translated: the translated title\n"
         f"  - skip: true if meaning is basically the same as any recent post, false otherwise\n"
-        f"Keep the translated title concise and suitable for a post title.\n"
-        f"Return ONLY JSON."
-        f"\n\nCandidates:\n" + "\n".join(lines)
+        f"Return ONLY JSON.\n\n"
+        f"Candidates:\n" + "\n".join(lines)
     )
 
 def translate_and_filter_with_gemini(candidates, recent_titles, target_lang="ZH"):
