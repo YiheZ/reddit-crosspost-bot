@@ -17,24 +17,34 @@ def _sanitize_json_output(text: str) -> str:
     text = re.sub(r"^```json\s*|\s*```$", "", text, flags=re.I)
     return text
 
-def _build_prompt(texts, target_lang="ZH", source_lang=None):
-    joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(texts)])
-    if source_lang:
-        return (
-            f"You are a professional translation engine.\n"
-            f"Translate the following texts from {source_lang} into {target_lang}.\n"
-            f"Keep the same tone and style, make it sound natural like a native speaker.\n"
-            f"Return ONLY a JSON array of translations, nothing else.\n\n{joined}"
-        )
-    else:
-        return (
-            f"You are a professional translation engine.\n"
-            f"Translate the following texts into {target_lang}.\n"
-            f"Keep the same tone and style, make it sound natural like a native speaker.\n"
-            f"Return ONLY a JSON array of translations, nothing else.\n\n{joined}"
-        )
+def _build_prompt(texts, target_lang="ZH", source_langs=None):
+    """
+    Build prompt for Gemini batch translation.
+    If source_langs is a list, use corresponding source language per text.
+    """
+    joined_lines = []
+    for i, t in enumerate(texts):
+        src_lang = None
+        if isinstance(source_langs, list) and i < len(source_langs):
+            src_lang = source_langs[i]
+        if src_lang:
+            joined_lines.append(f"{i+1}. [{src_lang}] {t}")
+        else:
+            joined_lines.append(f"{i+1}. {t}")
+    joined = "\n".join(joined_lines)
 
-def translate_with_gemini(texts, target_lang="ZH", source_lang=None):
+    return (
+        f"You are a professional translation engine.\n"
+        f"Translate the following texts into {target_lang}.\n"
+        f"Keep the same tone and style, make it sound natural like a native speaker.\n"
+        f"Return ONLY a JSON array of translations, nothing else.\n\n{joined}"
+    )
+
+def translate_with_gemini(texts, target_lang="ZH", source_langs=None):
+    """
+    texts: list of strings
+    source_langs: None, str (single language), or list of same length as texts
+    """
     if not GEMINI_API_KEY:
         return {"error": "GEMINI_API_KEY not configured"}
 
@@ -44,7 +54,11 @@ def translate_with_gemini(texts, target_lang="ZH", source_lang=None):
     if isinstance(texts, str):
         texts = [texts]
 
-    prompt = _build_prompt(texts, target_lang, source_lang)
+    # If source_langs is a single string, convert to list
+    if isinstance(source_langs, str):
+        source_langs = [source_langs] * len(texts)
+
+    prompt = _build_prompt(texts, target_lang, source_langs)
 
     try:
         model = genai.GenerativeModel(MODEL_NAME)
