@@ -18,6 +18,9 @@ def load_json_env(env_name, default):
         print(f"⚠️ Invalid JSON in {env_name}, using default {default}")
         return default
 
+# -----------------------------
+# Reddit API setup
+# -----------------------------
 reddit = praw.Reddit(
     client_id=os.getenv("REDDIT_CLIENT_ID"),
     client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
@@ -26,6 +29,9 @@ reddit = praw.Reddit(
     password=os.getenv("REDDIT_PASSWORD")
 )
 
+# -----------------------------
+# GitHub Gist setup for posted IDs
+# -----------------------------
 GIST_ID = os.getenv("GIST_ID")
 MY_GIST_PAT = os.getenv("MY_GIST_PAT")
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
@@ -34,25 +40,31 @@ HEADERS = {
     "Accept": "application/vnd.github.v3+json"
 }
 
-SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
-TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
+# -----------------------------
+# Configuration variables (normalize to lowercase)
+# -----------------------------
+SOURCE_SUBS = [s.strip().lower() for s in os.getenv("SOURCE_SUBS", "news").split(",")]
+TARGET_SUB = os.getenv("TARGET_SUB", "yoursub").lower()
 
 INCLUDE_KEYWORDS = load_json_env("INCLUDE_KEYWORDS", [])
 EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", [])
 
 CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID", "")
-TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
+TRANSLATE_SUBS = [s.strip().lower() for s in os.getenv("TRANSLATE_SUBS", "").split(",")]
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
-TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
+TRANSLATE_SOURCE_LANGS = {k.lower(): v for k, v in load_json_env("TRANSLATE_SOURCE_LANGS", {}).items()}
 
-FORCE_SUBMIT_SUBS = os.getenv("FORCE_SUBMIT_SUBS", "").split(",")
+FORCE_SUBMIT_SUBS = [s.strip().lower() for s in os.getenv("FORCE_SUBMIT_SUBS", "").split(",")]
 
 try:
-    LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", {})
+    LIMIT_POSTS_DICT = {k.lower(): v for k, v in load_json_env("LIMIT_POSTS", {}).items()}
 except Exception:
     LIMIT_POSTS_DICT = {}
 DEFAULT_LIMIT_POSTS = 3
 
+# -----------------------------
+# Load posted IDs from Gist
+# -----------------------------
 def load_posted_ids():
     response = requests.get(GIST_API_URL, headers=HEADERS)
     if response.status_code != 200:
@@ -71,6 +83,9 @@ def save_posted_ids(posted_ids):
 
 posted_ids = load_posted_ids()
 
+# -----------------------------
+# Helper functions
+# -----------------------------
 def match_keywords(title: str) -> bool:
     title_lower = title.lower()
     if any(kw.lower() in title_lower for kw in EXCLUDE_KEYWORDS if kw):
@@ -96,27 +111,27 @@ try:
     
     # Step 1: Collect posts per sub, filter & respect limits
     for sub in SOURCE_SUBS:
-        posts = get_top_posts_past_day(sub.strip(), max_candidates=500, top_limit=100)
-        sub_limit = LIMIT_POSTS_DICT.get(sub.strip(), DEFAULT_LIMIT_POSTS)
-        sub_limits[sub.strip()] = sub_limit
+        posts = get_top_posts_past_day(sub, max_candidates=500, top_limit=100)
+        sub_limit = LIMIT_POSTS_DICT.get(sub, DEFAULT_LIMIT_POSTS)
+        sub_limits[sub] = sub_limit
 
         filtered = [
             p for p in posts
             if p.id not in posted_ids
-            and p.subreddit.display_name.lower() != TARGET_SUB.lower()
+            and p.subreddit.display_name.lower() != TARGET_SUB
             and match_keywords(p.title)
         ][:sub_limit]  # Respect per-sub limit here
 
         all_posts_to_post.extend(filtered)
 
     # Step 2: Batch translate only posts needing translation
-    posts_for_translation = [p for p in all_posts_to_post if p.subreddit.display_name in TRANSLATE_SUBS]
+    posts_for_translation = [p for p in all_posts_to_post if p.subreddit.display_name.lower() in TRANSLATE_SUBS]
     title_map = {}
     if posts_for_translation:
         titles_to_translate = [p.title for p in posts_for_translation]
-        source_langs = [TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name) for p in posts_for_translation]
-        unique_langs = set(filter(None, source_langs))
-        source_lang = unique_langs.pop() if len(unique_langs) == 1 else None
+        # If all posts have same source lang, pass it; else None
+        src_langs = [TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower()) for p in posts_for_translation]
+        source_lang = src_langs[0] if all(x == src_langs[0] for x in src_langs) else None
 
         result = translate_with_gemini(
             titles_to_translate,
@@ -130,14 +145,14 @@ try:
 
     # Step 3: Post each sub respecting limits
     for sub in SOURCE_SUBS:
-        sub_posts = [p for p in all_posts_to_post if p.subreddit.display_name.lower() == sub.strip().lower()]
+        sub_posts = [p for p in all_posts_to_post if p.subreddit.display_name.lower() == sub]
         crossposted = 0
-        sub_limit = sub_limits.get(sub.strip(), DEFAULT_LIMIT_POSTS)
+        sub_limit = sub_limits.get(sub, DEFAULT_LIMIT_POSTS)
 
         for post in sub_posts:
             title_to_post = title_map.get(post.id, post.title)
 
-            if sub.strip() in FORCE_SUBMIT_SUBS:
+            if sub in FORCE_SUBMIT_SUBS:
                 reddit.subreddit(TARGET_SUB).submit(
                     title=title_to_post,
                     url=post.url,
@@ -148,7 +163,7 @@ try:
                 crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
                 if CROSSPOST_FLAIR_ID:
                     crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
-                if sub.strip() in TRANSLATE_SUBS:
+                if sub in TRANSLATE_SUBS:
                     crosspost_kwargs["title"] = title_to_post
                 post.crosspost(**crosspost_kwargs)
                 print(f"✅ Crossposted from r/{sub}: {title_to_post}")
