@@ -6,14 +6,8 @@ import time
 import random
 import requests
 from datetime import datetime, timedelta, timezone
-# -----------------------------
-# Translation imports
-# -----------------------------
 from gemini_translate import translate_with_gemini
 
-# -----------------------------
-# Helper: safely load JSON env
-# -----------------------------
 def load_json_env(env_name, default):
     raw = os.getenv(env_name, "").strip()
     if not raw:
@@ -24,9 +18,6 @@ def load_json_env(env_name, default):
         print(f"⚠️ Invalid JSON in {env_name}, using default {default}")
         return default
 
-# -----------------------------
-# Reddit API setup
-# -----------------------------
 reddit = praw.Reddit(
     client_id=os.getenv("REDDIT_CLIENT_ID"),
     client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
@@ -35,9 +26,6 @@ reddit = praw.Reddit(
     password=os.getenv("REDDIT_PASSWORD")
 )
 
-# -----------------------------
-# GitHub Gist setup for posted IDs
-# -----------------------------
 GIST_ID = os.getenv("GIST_ID")
 MY_GIST_PAT = os.getenv("MY_GIST_PAT")
 GIST_API_URL = f"https://api.github.com/gists/{GIST_ID}"
@@ -46,9 +34,6 @@ HEADERS = {
     "Accept": "application/vnd.github.v3+json"
 }
 
-# -----------------------------
-# Configuration variables
-# -----------------------------
 SOURCE_SUBS = os.getenv("SOURCE_SUBS", "news").split(",")
 TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 
@@ -68,9 +53,6 @@ except Exception:
     LIMIT_POSTS_DICT = {}
 DEFAULT_LIMIT_POSTS = 3
 
-# -----------------------------
-# Load posted IDs from Gist
-# -----------------------------
 def load_posted_ids():
     response = requests.get(GIST_API_URL, headers=HEADERS)
     if response.status_code != 200:
@@ -89,9 +71,6 @@ def save_posted_ids(posted_ids):
 
 posted_ids = load_posted_ids()
 
-# -----------------------------
-# Helper functions
-# -----------------------------
 def match_keywords(title: str) -> bool:
     title_lower = title.lower()
     if any(kw.lower() in title_lower for kw in EXCLUDE_KEYWORDS if kw):
@@ -109,53 +88,51 @@ def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
     return posts[:top_limit]
 
 # -----------------------------
-# Main crosspost logic with Gemini batching across all subs
+# Main logic
 # -----------------------------
 try:
-    # Step 1: Collect all posts from all source subs
-    all_posts = []
+    all_posts_to_post = []
     sub_limits = {}
+    
+    # Step 1: Collect posts per sub, filter & respect limits
     for sub in SOURCE_SUBS:
         posts = get_top_posts_past_day(sub.strip(), max_candidates=500, top_limit=100)
         sub_limit = LIMIT_POSTS_DICT.get(sub.strip(), DEFAULT_LIMIT_POSTS)
         sub_limits[sub.strip()] = sub_limit
-        all_posts.extend(posts)
 
-    # Step 2: Filter out posts already posted or from target subreddit
-    posts_to_translate = [
-        p for p in all_posts
-        if p.id not in posted_ids
-        and p.subreddit.display_name.lower() != TARGET_SUB.lower()
-        and match_keywords(p.title)
-    ]
+        filtered = [
+            p for p in posts
+            if p.id not in posted_ids
+            and p.subreddit.display_name.lower() != TARGET_SUB.lower()
+            and match_keywords(p.title)
+        ][:sub_limit]  # Respect per-sub limit here
 
-    # Step 3: Batch translate using Gemini
+        all_posts_to_post.extend(filtered)
+
+    # Step 2: Batch translate only posts needing translation
+    posts_for_translation = [p for p in all_posts_to_post if p.subreddit.display_name in TRANSLATE_SUBS]
     title_map = {}
-    if posts_to_translate:
-        subs_for_translation = set(sub.strip() for sub in SOURCE_SUBS)
-        # Only translate posts from subs that require translation
-        posts_for_translation = [
-            p for p in posts_to_translate if p.subreddit.display_name in TRANSLATE_SUBS
-        ]
-        if posts_for_translation:
-            titles_to_translate = [p.title for p in posts_for_translation]
-            # Use first post's subreddit as source_lang reference if needed
-            source_lang = None
-            if TRANSLATE_SOURCE_LANGS:
-                source_lang = TRANSLATE_SOURCE_LANGS.get(posts_for_translation[0].subreddit.display_name)
-            result = translate_with_gemini(
-                titles_to_translate,
-                target_lang=TRANSLATE_TARGET_LANG,
-                source_lang=source_lang
-            )
-            if "texts" in result:
-                title_map = {p.id: result["texts"][i] for i, p in enumerate(posts_for_translation)}
-            else:
-                print(f"Translation error: {result.get('error')} (posting original titles)")
+    if posts_for_translation:
+        titles_to_translate = [p.title for p in posts_for_translation]
+        # Determine source_lang per subreddit
+        source_langs = [TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name) for p in posts_for_translation]
+        # If all source_lang are same, pass it; otherwise None
+        unique_langs = set(filter(None, source_langs))
+        source_lang = unique_langs.pop() if len(unique_langs) == 1 else None
 
-    # Step 4: Post each subreddit respecting limits
+        result = translate_with_gemini(
+            titles_to_translate,
+            target_lang=TRANSLATE_TARGET_LANG,
+            source_lang=source_lang
+        )
+        if "texts" in result:
+            title_map = {p.id: result["texts"][i] for i, p in enumerate(posts_for_translation)}
+        else:
+            print(f"Translation error: {result.get('error')} (posting original titles)")
+
+    # Step 3: Post each sub respecting limits
     for sub in SOURCE_SUBS:
-        sub_posts = [p for p in posts_to_translate if p.subreddit.display_name.lower() == sub.strip().lower()]
+        sub_posts = [p for p in all_posts_to_post if p.subreddit.display_name.lower() == sub.strip().lower()]
         crossposted = 0
         sub_limit = sub_limits.get(sub.strip(), DEFAULT_LIMIT_POSTS)
 
@@ -170,27 +147,4 @@ try:
                 )
                 print(f"✅ Submitted (force submit) from r/{sub}: {title_to_post}")
             else:
-                crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
-                if CROSSPOST_FLAIR_ID:
-                    crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
-                if sub.strip() in TRANSLATE_SUBS:
-                    crosspost_kwargs["title"] = title_to_post
-                post.crosspost(**crosspost_kwargs)
-                print(f"✅ Crossposted from r/{sub}: {title_to_post}")
-
-            posted_ids.add(post.id)
-            crossposted += 1
-            time.sleep(random.randint(2, 5))
-
-            if crossposted >= sub_limit:
-                break
-
-        time.sleep(random.randint(5, 10))
-
-    # Step 5: Save posted IDs
-    save_posted_ids(posted_ids)
-    print("✅ Done")
-
-except Exception as e:
-    print(f"❌ Fatal error: {e}")
-    sys.exit(1)
+                crosspost_kwargs = {"subreddit": TARGET_SUB, "send_re
