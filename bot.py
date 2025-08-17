@@ -143,9 +143,13 @@ try:
 
     # Post each
     for post in all_posts:
-        title_to_post = title_map.get(post.id, post.title)
-        print(f"Posting: [{post.subreddit.display_name}] {title_to_post}")
-
+        original_title = post.title
+        title_to_post = title_map.get(post.id, original_title)
+        
+        print(f"Posting from r/{post.subreddit.display_name}:")
+        print(f"  Original title: {original_title}")
+        print(f"  Title to post: {title_to_post}")
+    
         if post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
             reddit.subreddit(TARGET_SUB).submit(
                 title=title_to_post,
@@ -160,7 +164,7 @@ try:
             crosspost_kwargs["title"] = title_to_post
             post.crosspost(**crosspost_kwargs)
             print(f"✅ Crossposted from r/{post.subreddit.display_name}: {title_to_post}")
-
+    
         posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
         time.sleep(random.randint(2, 5))
 
