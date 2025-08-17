@@ -173,20 +173,25 @@ try:
         if post.id in title_map:
             title_to_post = title_map[post.id]["title_translated"]
             skip = title_map[post.id]["skip"]
-
+    
         print(f"Posting from r/{post.subreddit.display_name}:")
         print(f"  Original title: {post.title}")
         print(f"  Title to post: {title_to_post}")
         print(f"  Skip: {skip}")
-
+    
         # Determine if external
         external = is_external_link(post)
-
+    
+        # Skip completely if title is empty or should be skipped and it's not an external link
         if skip and not external:
             print("⏭ Skipped due to similarity with recent posts")
             posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
             continue
-
+        if not title_to_post:
+            print("⏭ Skipped because translated title is empty")
+            posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
+            continue
+    
         # Determine submit vs crosspost
         if external or post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
             reddit.subreddit(TARGET_SUB).submit(
@@ -201,13 +206,13 @@ try:
                 crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
             post.crosspost(**crosspost_kwargs)
             print(f"✅ Crossposted from r/{post.subreddit.display_name}")
-
+    
         # Save both IDs if crosspost
         posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
         if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
             orig_id = post.crosspost_parent_list[0]["id"]
             posted_ids[orig_id] = int(datetime.now(timezone.utc).timestamp())
-
+    
         time.sleep(random.randint(2,5))
 
     save_posted_ids(posted_ids)
