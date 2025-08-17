@@ -42,6 +42,7 @@ def _build_prompt(texts, target_lang="ZH", source_langs=None):
         f"Keep the tone concise, natural, and readable as if a native speaker wrote it for a social media post or news headline.\n"
         f"Convert all measurement units and terms to what a typical {target_lang} speaker would expect (e.g., gallons → liters, miles → kilometers, pounds → kilograms).\n"
         f"Keep numbers and proper nouns as-is unless unit conversion is needed for clarity.\n"
+        f"Do NOT add sentence-ending punctuation like a period (。) at the end, as these are post titles.\n"
         f"Return ONLY a JSON array of translated titles, in the same order as the input.\n\n{joined}"
     )
 
