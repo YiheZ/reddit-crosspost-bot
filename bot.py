@@ -52,7 +52,7 @@ TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 INCLUDE_KEYWORDS = load_json_env("INCLUDE_KEYWORDS", [])
 EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", [])
 
-CROSSPOST_FLARE_ID = os.getenv("CROSSPOST_FLARE_ID", "")
+CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID", "")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
 
@@ -188,13 +188,13 @@ try:
             reddit.subreddit(TARGET_SUB).submit(
                 title=title_to_post,
                 url=post.url,
-                flare_id=CROSSPOST_FLARE_ID if CROSSPOST_FLARE_ID else None
+                flair_id=CROSSPOST_FLAIR_ID if CROSSPOST_FLAIR_ID else None
             )
             print(f"✅ Submitted (external/force) from r/{post.subreddit.display_name}")
         else:
             crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post}
-            if CROSSPOST_FLARE_ID:
-                crosspost_kwargs["flare_id"] = CROSSPOST_FLARE_ID
+            if CROSSPOST_FLAIR_ID:
+                crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
             post.crosspost(**crosspost_kwargs)
             print(f"✅ Crossposted from r/{post.subreddit.display_name}")
 
