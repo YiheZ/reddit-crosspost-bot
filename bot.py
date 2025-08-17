@@ -53,7 +53,6 @@ INCLUDE_KEYWORDS = load_json_env("INCLUDE_KEYWORDS", [])
 EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", [])
 
 CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID", "")
-TRANSLATE_SUBS = os.getenv("TRANSLATE_SUBS", "").split(",")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
 
@@ -129,13 +128,21 @@ try:
         print(f"🔹 r/{sub.strip()}: fetched {len(posts)} posts, {len(filtered)} selected for posting (limit {limit}).")
         all_posts.extend(filtered)
 
-    # Batch translation for all posts that need translation
-    posts_to_translate = [p for p in all_posts if p.subreddit.display_name.lower() in [s.lower() for s in TRANSLATE_SUBS]]
+    # Prepare source languages per post (auto-detect by default)
+    posts_to_translate = []
+    source_langs_list = []
+    for p in all_posts:
+        src_lang = TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower())
+        if src_lang and src_lang.upper() == TRANSLATE_TARGET_LANG.upper():
+            continue  # Skip translation if source = target
+        posts_to_translate.append(p)
+        source_langs_list.append(src_lang)  # can be None for auto-detect
+
+    # Batch translation
     title_map = {}
     if posts_to_translate:
         texts = [p.title for p in posts_to_translate]
-        source_langs = [TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower(), None) for p in posts_to_translate]
-        result = translate_with_gemini(texts, target_lang=TRANSLATE_TARGET_LANG, source_langs=source_langs)
+        result = translate_with_gemini(texts, target_lang=TRANSLATE_TARGET_LANG, source_langs=source_langs_list)
         if "texts" in result:
             title_map = {p.id: result["texts"][i] for i, p in enumerate(posts_to_translate)}
         else:
@@ -145,11 +152,11 @@ try:
     for post in all_posts:
         original_title = post.title
         title_to_post = title_map.get(post.id, original_title)
-        
+
         print(f"Posting from r/{post.subreddit.display_name}:")
         print(f"  Original title: {original_title}")
         print(f"  Title to post: {title_to_post}")
-    
+
         if post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
             reddit.subreddit(TARGET_SUB).submit(
                 title=title_to_post,
@@ -164,7 +171,7 @@ try:
             crosspost_kwargs["title"] = title_to_post
             post.crosspost(**crosspost_kwargs)
             print(f"✅ Crossposted from r/{post.subreddit.display_name}: {title_to_post}")
-    
+
         posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
         time.sleep(random.randint(2, 5))
 
