@@ -114,9 +114,7 @@ try:
     title_map = {}
     if posts_for_translation:
         titles_to_translate = [p.title for p in posts_for_translation]
-        # Determine source_lang per subreddit
         source_langs = [TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name) for p in posts_for_translation]
-        # If all source_lang are same, pass it; otherwise None
         unique_langs = set(filter(None, source_langs))
         source_lang = unique_langs.pop() if len(unique_langs) == 1 else None
 
@@ -147,4 +145,25 @@ try:
                 )
                 print(f"✅ Submitted (force submit) from r/{sub}: {title_to_post}")
             else:
-                crosspost_kwargs = {"subreddit": TARGET_SUB, "send_re
+                crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False}
+                if CROSSPOST_FLAIR_ID:
+                    crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
+                if sub.strip() in TRANSLATE_SUBS:
+                    crosspost_kwargs["title"] = title_to_post
+                post.crosspost(**crosspost_kwargs)
+                print(f"✅ Crossposted from r/{sub}: {title_to_post}")
+
+            posted_ids.add(post.id)
+            crossposted += 1
+
+            time.sleep(random.randint(2, 5))
+            if crossposted >= sub_limit:
+                break
+
+        time.sleep(random.randint(5, 10))
+
+    save_posted_ids(posted_ids)
+    print("✅ Done")
+except Exception as e:
+    print(f"❌ Fatal error: {e}")
+    sys.exit(1)
