@@ -230,6 +230,7 @@ try:
 
         flair_id = next((f["id"] for f in flairs if f["text"] == suggested_flair), None)
 
+        # Decide submit vs crosspost
         if external or post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
             reddit.subreddit(TARGET_SUB).submit(
                 title=title_to_post,
@@ -238,12 +239,19 @@ try:
             )
             print(f"✅ Submitted (external/force) from r/{post.subreddit.display_name}")
         else:
+            post_to_cross = post
+            if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
+                orig_id = post.crosspost_parent_list[0]["id"]
+                post_to_cross = reddit.submission(id=orig_id)
+                print(f"🔹 Crossposting original post {orig_id} from r/{post_to_cross.subreddit.display_name}")
+
             crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post}
             if flair_id:
                 crosspost_kwargs["flair_id"] = flair_id
-            post.crosspost(**crosspost_kwargs)
-            print(f"✅ Crossposted from r/{post.subreddit.display_name}")
+            post_to_cross.crosspost(**crosspost_kwargs)
+            print(f"✅ Crossposted from r/{post_to_cross.subreddit.display_name}")
 
+        # Save posted IDs
         posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
         if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
             orig_id = post.crosspost_parent_list[0]["id"]
