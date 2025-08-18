@@ -40,3 +40,4 @@ jobs:
           TRANSLATE_SUBS: ${{ vars.TRANSLATE_SUBS }}
           TRANSLATE_TARGET_LANG: ${{ vars.TRANSLATE_TARGET_LANG }}
           TRANSLATE_SOURCE_LANGS: ${{ vars.TRANSLATE_SOURCE_LANGS }}
+          FETCH_MODE: ${{ vars.FETCH_MODE }}
