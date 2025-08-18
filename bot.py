@@ -56,6 +56,10 @@ EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", [])
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
 
+# "popular" = top posts in past 24h (default)
+# "latest" = newest posts
+FETCH_MODE = os.getenv("FETCH_MODE", "popular").lower()
+
 LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", {})
 DEFAULT_LIMIT_POSTS = 1
 
@@ -100,13 +104,27 @@ def match_keywords(title: str) -> bool:
         return any(kw.lower() in title_lower for kw in INCLUDE_KEYWORDS if kw)
     return True
 
-def get_top_posts_past_day(subreddit_name, max_candidates=500, top_limit=100):
+def fetch_posts(subreddit_name, max_candidates=500, top_limit=100):
     subreddit = reddit.subreddit(subreddit_name)
-    one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
-    posts = [p for p in subreddit.new(limit=max_candidates)
-             if datetime.fromtimestamp(p.created_utc, timezone.utc) >= one_day_ago]
-    posts.sort(key=lambda p: p.score, reverse=True)
-    return posts[:top_limit]
+    now = datetime.now(timezone.utc)
+    one_day_ago = now - timedelta(days=1)
+
+    if FETCH_MODE == "latest":
+        print(f"🔹 Fetch mode: latest posts for r/{subreddit_name}")
+        posts = [p for p in subreddit.new(limit=max_candidates)
+                 if datetime.fromtimestamp(p.created_utc, timezone.utc) >= one_day_ago]
+        posts.sort(key=lambda p: p.created_utc, reverse=True)
+        print(f"🔹 Fetched {len(posts)} latest posts")
+        return posts[:top_limit]
+
+    else:
+        # Default: popular
+        print(f"🔹 Fetch mode: popular posts for r/{subreddit_name}")
+        posts = [p for p in subreddit.new(limit=max_candidates)
+                 if datetime.fromtimestamp(p.created_utc, timezone.utc) >= one_day_ago]
+        posts.sort(key=lambda p: p.score, reverse=True)
+        print(f"🔹 Fetched {len(posts)} posts, sorted by score")
+        return posts[:top_limit]
 
 def get_recent_target_posts(hours=24):
     subreddit = reddit.subreddit(TARGET_SUB)
@@ -234,31 +252,32 @@ try:
     all_posts = []
 
     for sub in SOURCE_SUBS:
-        posts = get_top_posts_past_day(sub.strip())
-        limit = LIMIT_POSTS_DICT.get(sub.strip(), DEFAULT_LIMIT_POSTS)
+        sub = sub.strip()
+        posts = fetch_posts(sub)
+        limit = LIMIT_POSTS_DICT.get(sub, DEFAULT_LIMIT_POSTS)
         filtered = []
 
         for p in posts:
+            print(f"📝 Inspecting post {p.id} | {p.title} | score={p.score} | created={datetime.fromtimestamp(p.created_utc)}")
             if p.id in posted_ids or p.subreddit.display_name.lower() == TARGET_SUB.lower():
+                print(f"⏭ Skipping because already posted or in target subreddit")
                 continue
             if not match_keywords(p.title):
+                print(f"⏭ Skipping because does not match keywords")
                 continue
 
             if not p.is_self:
                 norm_url = normalize_link(p.url)
                 if norm_url in seen_links:
-                    print(f"⏭ Skipped duplicate link in batch: {p.url}")
+                    print(f"⏭ Skipping duplicate link in batch: {p.url}")
                     continue
                 seen_links.add(norm_url)
 
             filtered.append(p)
 
         filtered = filtered[:limit]
-        print(f"🔹 r/{sub.strip()}: fetched {len(posts)}, selected {len(filtered)} (limit {limit})")
+        print(f"🔹 r/{sub}: fetched {len(posts)}, selected {len(filtered)} (limit {limit})")
         all_posts.extend(filtered)
-
-    recent_titles = get_recent_target_posts(hours=24)
-    print(f"🔹 Recent titles in r/{TARGET_SUB} (past 24h): {len(recent_titles)}")
 
     # Prepare candidates for Gemini
     candidates = []
