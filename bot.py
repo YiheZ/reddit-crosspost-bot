@@ -7,7 +7,7 @@ import random
 import requests
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, urlunparse
-from genmini_translate import translate_and_filter_with_gemini
+from gemini_translate import translate_and_filter_with_gemini
 
 # -----------------------------
 # Helper: safely load JSON env
