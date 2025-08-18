@@ -138,7 +138,11 @@ def normalize_link(url: str) -> str:
 # -----------------------------
 def fetch_target_flairs():
     subreddit = reddit.subreddit(TARGET_SUB)
-    return [f["flair_text"] for f in subreddit.flair.link_templates if f["flair_text"]]
+    flairs = []
+    for f in subreddit.flair.link_templates:
+        if f.text:
+            flairs.append({"text": f.text, "id": f.id})
+    return flairs
 
 # -----------------------------
 # Main bot logic
@@ -168,7 +172,8 @@ try:
         print(f"🔹 r/{sub.strip()}: fetched {len(posts)}, selected {len(filtered)}")
 
     recent_titles = get_recent_target_posts(hours=24)
-    flair_options = fetch_target_flairs()
+    flairs = fetch_target_flairs()
+    flair_options = [f["text"] for f in flairs]
 
     candidates = []
     for p in all_posts:
@@ -210,9 +215,12 @@ try:
             posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
             continue
 
+        # get flair_id from suggested_flair
+        flair_id = next((f["id"] for f in flairs if f["text"] == suggested_flair), None)
+
         submit_kwargs = {"title": title_to_post, "send_replies": False}
-        if suggested_flair in flair_options:
-            submit_kwargs["flair_id"] = next(f["id"] for f in reddit.subreddit(TARGET_SUB).flair.link_templates if f["flair_text"] == suggested_flair)
+        if flair_id:
+            submit_kwargs["flair_id"] = flair_id
 
         if external or post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
             reddit.subreddit(TARGET_SUB).submit(
