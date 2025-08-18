@@ -34,13 +34,14 @@ def _build_prompt(candidates, recent_titles, target_lang="ZH"):
         f"Translate the following titles into {target_lang}, keeping the tone and style natural and native-sounding for the subreddit context.\n"
         f"Convert any measurements to local units (e.g., kg, km, °C) if applicable.\n"
         f"Do NOT add a full stop (。) at the end unless it is natural.\n"
+        f"If two or more titles are basically identical in meaning among the candidates, only translate the first one and mark the rest as skip.\n"
         f"Do NOT post titles that are basically identical to any recent titles in the target subreddit.\n"
         f"Check similarity against these recent titles:\n"
         f"{recent_joined}\n\n"
         f"For each candidate, return a JSON array of objects with:\n"
         f"  - id: the post id\n"
         f"  - title_translated: the translated title\n"
-        f"  - skip: true if meaning is basically the same as any recent post, false otherwise\n"
+        f"  - skip: true if meaning is basically the same as any recent post or another candidate already selected, false otherwise\n"
         f"Return ONLY JSON.\n\n"
         f"Candidates:\n" + "\n".join(lines)
     )
