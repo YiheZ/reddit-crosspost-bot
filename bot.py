@@ -118,20 +118,40 @@ def is_external_link(post):
     print(f"🔍 Checking post {post.id}:")
     print(f"   is_self: {post.is_self}")
     print(f"   url: {post.url}")
-    print(f"   has crosspost_parent_list: {hasattr(post, 'crosspost_parent_list')}")
-    if hasattr(post, 'crosspost_parent_list'):
-        print(f"   crosspost_parent_list: {post.crosspost_parent_list}")
     
-    if post.is_self:  # Text posts are never external
-        print(f"   → Returning False (self post)")
+    # Check if this is a crosspost
+    if hasattr(post, 'crosspost_parent_list') and post.crosspost_parent_list:
+        print(f"   → This is a crosspost, checking original post...")
+        original_post = post.crosspost_parent_list[0]
+        original_is_self = original_post.get('is_self', False)
+        print(f"   → Original post is_self: {original_is_self}")
+        
+        if original_is_self:
+            print(f"   → Returning False (original is self post)")
+            return False
+        
+        # Check original post URL
+        original_url = original_post.get('url', '')
+        print(f"   → Original post URL: {original_url}")
+        url_to_check = original_url
+    else:
+        # Regular post
+        if post.is_self:  # Text posts are never external
+            print(f"   → Returning False (self post)")
+            return False
+        url_to_check = post.url
+    
+    # Handle relative URLs (Reddit crossposts often have relative URLs)
+    if url_to_check.startswith('/r/'):
+        print(f"   → Relative Reddit URL detected, treating as internal")
         return False
     
-    url = post.url
     internal_domains = ["reddit.com", "i.redd.it", "v.redd.it", "redditmedia.com"]
-    is_internal = any(d in url for d in internal_domains)
+    is_internal = any(d in url_to_check for d in internal_domains)
     is_external = not is_internal
     
     print(f"   → Checking domains: {internal_domains}")
+    print(f"   → URL to check: {url_to_check}")
     print(f"   → Is internal: {is_internal}")
     print(f"   → Returning: {is_external}")
     
