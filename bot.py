@@ -75,7 +75,7 @@ def load_posted_ids():
     now_ts = int(datetime.now(timezone.utc).timestamp())
     clean_data = {}
     for pid, ts in data.get("posted_ids", {}).items():
-        if now_ts - ts <= 7*24*3600:  # keep 7 days
+        if now_ts - ts <= 7*24*3600:
             clean_data[pid] = ts
     return clean_data
 
@@ -143,6 +143,7 @@ def fetch_target_flairs():
 
 flairs = fetch_target_flairs()
 flair_options = [f["text"] for f in flairs]
+print(f"🔹 Available flairs in r/{TARGET_SUB}: {flair_options}")
 
 # -----------------------------
 # Main bot logic
@@ -163,15 +164,17 @@ try:
                 continue
             norm_url = normalize_link(p.url)
             if norm_url in seen_links:
+                print(f"⏭ Skipped duplicate link in batch: {p.url}")
                 continue
             seen_links.add(norm_url)
             filtered.append(p)
 
         filtered = filtered[:limit]
-        all_posts.extend(filtered)
         print(f"🔹 r/{sub.strip()}: fetched {len(posts)}, selected {len(filtered)} (limit {limit})")
+        all_posts.extend(filtered)
 
     recent_titles = get_recent_target_posts(hours=24)
+    print(f"🔹 Recent titles in r/{TARGET_SUB} (past 24h): {len(recent_titles)}")
 
     # Prepare candidates for Gemini
     candidates = []
@@ -185,9 +188,11 @@ try:
             "source_lang": None if skip_translation else src_lang,
             "subreddit": p.subreddit.display_name
         })
+        print(f"Candidate prepared: {p.id} | {orig_title} | src_lang={src_lang}")
 
     title_map = {}
     if candidates:
+        print("🔹 Sending candidates to Gemini for translation and flair suggestion...")
         result = translate_and_filter_with_gemini(
             candidates, 
             recent_titles, 
@@ -198,6 +203,7 @@ try:
             print(f"❌ Gemini error: {result['error']}")
         else:
             title_map = result
+            print(f"🔹 Gemini returned {len(title_map)} results")
 
     # Post loop
     for post in all_posts:
@@ -210,8 +216,15 @@ try:
             skip = title_map[post.id]["skip"]
             suggested_flair = title_map[post.id].get("suggested_flair")
 
+        print(f"\nPosting from r/{post.subreddit.display_name}:")
+        print(f"  Original title: {post.title}")
+        print(f"  Translated title: {title_to_post}")
+        print(f"  Skip: {skip}")
+        print(f"  Suggested flair: {suggested_flair}")
+
         external = is_external_link(post)
         if skip and not external or not title_to_post:
+            print("⏭ Skipped due to similarity or empty title")
             posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
             continue
 
@@ -223,11 +236,13 @@ try:
                 url=post.url,
                 flair_id=flair_id
             )
+            print(f"✅ Submitted (external/force) from r/{post.subreddit.display_name}")
         else:
             crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post}
             if flair_id:
                 crosspost_kwargs["flair_id"] = flair_id
             post.crosspost(**crosspost_kwargs)
+            print(f"✅ Crossposted from r/{post.subreddit.display_name}")
 
         posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
         if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
