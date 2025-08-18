@@ -177,7 +177,7 @@ def fetch_target_flairs():
     for f in subreddit.flair.link_templates:
         if f["text"]:
             flairs.append({"text": f["text"], "id": f["id"]})
-    return flair
+    return flairs
 
 def find_flair_id(suggested_flair, flairs):
     if not suggested_flair:
