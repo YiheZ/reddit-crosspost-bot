@@ -266,7 +266,7 @@ try:
         print(f"  Is self post: {post.is_self}")
         print(f"  Is external link: {is_external_link(post)}")
 
-        if skip and not is_external_link(post) or not title_to_post:
+        if skip or not title_to_post:
             print("⏭ Skipped due to similarity or empty title")
             posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
             continue
