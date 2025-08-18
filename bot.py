@@ -110,20 +110,16 @@ def fetch_posts(subreddit_name, max_candidates=500, top_limit=100):
     one_day_ago = now - timedelta(days=1)
 
     if FETCH_MODE == "latest":
-        print(f"🔹 Fetch mode: latest posts for r/{subreddit_name}")
         posts = [p for p in subreddit.new(limit=max_candidates)
                  if datetime.fromtimestamp(p.created_utc, timezone.utc) >= one_day_ago]
         posts.sort(key=lambda p: p.created_utc, reverse=True)
-        print(f"🔹 Fetched {len(posts)} latest posts")
         return posts[:top_limit]
 
     else:
         # Default: popular
-        print(f"🔹 Fetch mode: popular posts for r/{subreddit_name}")
         posts = [p for p in subreddit.new(limit=max_candidates)
                  if datetime.fromtimestamp(p.created_utc, timezone.utc) >= one_day_ago]
         posts.sort(key=lambda p: p.score, reverse=True)
-        print(f"🔹 Fetched {len(posts)} posts, sorted by score")
         return posts[:top_limit]
 
 def get_recent_target_posts(hours=24):
@@ -179,7 +175,7 @@ print(f"🔹 Available flairs in r/{TARGET_SUB}: {flair_options}")
 # -----------------------------
 # Retry posting function
 # -----------------------------
-def process_posts(posts, title_map, flairs, posted_ids, retries=0):
+def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0):
     failed = []
     for post in posts:
         try:
@@ -238,11 +234,11 @@ def process_posts(posts, title_map, flairs, posted_ids, retries=0):
         ]
         new_map = translate_and_filter_with_gemini(
             candidates,
-            get_recent_target_posts(hours=24),
+            recent_titles,
             target_lang=TRANSLATE_TARGET_LANG,
             flair_options=flair_options
         )
-        process_posts(failed, new_map, flairs, posted_ids, retries=retries+1)
+        process_posts(failed, new_map, flairs, posted_ids, recent_titles, retries=retries+1)
 
 # -----------------------------
 # Main bot logic
@@ -258,27 +254,28 @@ try:
         filtered = []
 
         for p in posts:
-            print(f"📝 Inspecting post {p.id} | {p.title} | score={p.score} | created={datetime.fromtimestamp(p.created_utc)}")
             if p.id in posted_ids or p.subreddit.display_name.lower() == TARGET_SUB.lower():
-                print(f"⏭ Skipping because already posted or in target subreddit")
                 continue
             if not match_keywords(p.title):
-                print(f"⏭ Skipping because does not match keywords")
                 continue
 
             if not p.is_self:
                 norm_url = normalize_link(p.url)
                 if norm_url in seen_links:
-                    print(f"⏭ Skipping duplicate link in batch: {p.url}")
                     continue
                 seen_links.add(norm_url)
 
             filtered.append(p)
 
         filtered = filtered[:limit]
-        print(f"🔹 r/{sub}: fetched {len(posts)}, selected {len(filtered)} (limit {limit})")
+        print(f"🔹 r/{sub}: selected {len(filtered)} posts (limit {limit})")
+        for p in filtered:
+            print(f"   Selected: {p.title}")
         all_posts.extend(filtered)
 
+    # Get recent target posts before using it
+    recent_titles = get_recent_target_posts(hours=24)
+    
     # Prepare candidates for Gemini
     candidates = []
     for p in all_posts:
@@ -291,11 +288,13 @@ try:
             "source_lang": None if skip_translation else src_lang,
             "subreddit": p.subreddit.display_name
         })
-        print(f"Candidate prepared: {p.id} | {orig_title} | src_lang={src_lang}")
 
     title_map = {}
     if candidates:
-        print("🔹 Sending candidates to Gemini for translation and flair suggestion...")
+        print(f"🔹 Sending {len(candidates)} candidates to Gemini for translation and flair suggestion...")
+        for c in candidates:
+            print(f"   Candidate: {c['id']} | {c['title']} | src_lang={c['source_lang']}")
+        
         result = translate_and_filter_with_gemini(
             candidates,
             recent_titles,
@@ -306,9 +305,11 @@ try:
             print(f"❌ Gemini error: {result['error']}")
         else:
             title_map = result
-            print(f"🔹 Gemini returned {len(title_map)} results")
+            print(f"🔹 Gemini returned {len(title_map)} results:")
+            for post_id, entry in title_map.items():
+                print(f"   {post_id}: {entry}")
 
-    process_posts(all_posts, title_map, flairs, posted_ids)
+    process_posts(all_posts, title_map, flairs, posted_ids, recent_titles)
 
     save_posted_ids(posted_ids)
     print("✅ Done")
