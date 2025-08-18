@@ -115,11 +115,27 @@ def get_recent_target_posts(hours=24):
 
 def is_external_link(post):
     """Check if post is an external link (not Reddit internal)"""
+    print(f"🔍 Checking post {post.id}:")
+    print(f"   is_self: {post.is_self}")
+    print(f"   url: {post.url}")
+    print(f"   has crosspost_parent_list: {hasattr(post, 'crosspost_parent_list')}")
+    if hasattr(post, 'crosspost_parent_list'):
+        print(f"   crosspost_parent_list: {post.crosspost_parent_list}")
+    
     if post.is_self:  # Text posts are never external
+        print(f"   → Returning False (self post)")
         return False
+    
     url = post.url
     internal_domains = ["reddit.com", "i.redd.it", "v.redd.it", "redditmedia.com"]
-    return not any(d in url for d in internal_domains)
+    is_internal = any(d in url for d in internal_domains)
+    is_external = not is_internal
+    
+    print(f"   → Checking domains: {internal_domains}")
+    print(f"   → Is internal: {is_internal}")
+    print(f"   → Returning: {is_external}")
+    
+    return is_external
 
 def get_original_post_title(post):
     if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
