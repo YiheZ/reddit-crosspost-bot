@@ -75,7 +75,7 @@ def load_posted_ids():
     now_ts = int(datetime.now(timezone.utc).timestamp())
     clean_data = {}
     for pid, ts in data.get("posted_ids", {}).items():
-        if now_ts - ts <= 7*24*3600:
+        if now_ts - ts <= 7*24*3600:  # keep 7 days
             clean_data[pid] = ts
     return clean_data
 
@@ -133,16 +133,16 @@ def normalize_link(url: str) -> str:
     normalized = urlunparse((parsed.scheme, netloc, path, '', '', ''))
     return normalized
 
-# -----------------------------
-# Fetch available flairs from target subreddit
-# -----------------------------
 def fetch_target_flairs():
     subreddit = reddit.subreddit(TARGET_SUB)
     flairs = []
     for f in subreddit.flair.link_templates:
-        if f.text:
-            flairs.append({"text": f.text, "id": f.id})
+        if f["text"]:
+            flairs.append({"text": f["text"], "id": f["id"]})
     return flairs
+
+flairs = fetch_target_flairs()
+flair_options = [f["text"] for f in flairs]
 
 # -----------------------------
 # Main bot logic
@@ -155,10 +155,9 @@ try:
         posts = get_top_posts_past_day(sub.strip())
         limit = LIMIT_POSTS_DICT.get(sub.strip(), DEFAULT_LIMIT_POSTS)
         filtered = []
+
         for p in posts:
-            if p.id in posted_ids:
-                continue
-            if p.subreddit.display_name.lower() == TARGET_SUB.lower():
+            if p.id in posted_ids or p.subreddit.display_name.lower() == TARGET_SUB.lower():
                 continue
             if not match_keywords(p.title):
                 continue
@@ -167,14 +166,14 @@ try:
                 continue
             seen_links.add(norm_url)
             filtered.append(p)
+
         filtered = filtered[:limit]
         all_posts.extend(filtered)
-        print(f"🔹 r/{sub.strip()}: fetched {len(posts)}, selected {len(filtered)}")
+        print(f"🔹 r/{sub.strip()}: fetched {len(posts)}, selected {len(filtered)} (limit {limit})")
 
     recent_titles = get_recent_target_posts(hours=24)
-    flairs = fetch_target_flairs()
-    flair_options = [f["text"] for f in flairs]
 
+    # Prepare candidates for Gemini
     candidates = []
     for p in all_posts:
         orig_title = get_original_post_title(p)
@@ -189,47 +188,46 @@ try:
 
     title_map = {}
     if candidates:
-        result = translate_and_filter_with_gemini(candidates, recent_titles, target_lang=TRANSLATE_TARGET_LANG, flair_options=flair_options)
+        result = translate_and_filter_with_gemini(
+            candidates, 
+            recent_titles, 
+            target_lang=TRANSLATE_TARGET_LANG, 
+            flair_options=flair_options
+        )
         if "error" in result:
             print(f"❌ Gemini error: {result['error']}")
         else:
             title_map = result
 
+    # Post loop
     for post in all_posts:
         title_to_post = post.title
         skip = False
         suggested_flair = None
+
         if post.id in title_map:
             title_to_post = title_map[post.id]["title_translated"]
             skip = title_map[post.id]["skip"]
             suggested_flair = title_map[post.id].get("suggested_flair")
 
-        print(f"Posting from r/{post.subreddit.display_name}: {title_to_post} | Skip: {skip} | Flair: {suggested_flair}")
-
         external = is_external_link(post)
-
-        if skip and not external:
-            posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
-            continue
-        if not title_to_post:
+        if skip and not external or not title_to_post:
             posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
             continue
 
-        # get flair_id from suggested_flair
         flair_id = next((f["id"] for f in flairs if f["text"] == suggested_flair), None)
-
-        submit_kwargs = {"title": title_to_post, "send_replies": False}
-        if flair_id:
-            submit_kwargs["flair_id"] = flair_id
 
         if external or post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
             reddit.subreddit(TARGET_SUB).submit(
                 title=title_to_post,
                 url=post.url,
-                flair_id=submit_kwargs.get("flair_id")
+                flair_id=flair_id
             )
         else:
-            post.crosspost(subreddit=TARGET_SUB, **submit_kwargs)
+            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post}
+            if flair_id:
+                crosspost_kwargs["flair_id"] = flair_id
+            post.crosspost(**crosspost_kwargs)
 
         posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
         if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
