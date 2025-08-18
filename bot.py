@@ -177,7 +177,28 @@ def fetch_target_flairs():
     for f in subreddit.flair.link_templates:
         if f["text"]:
             flairs.append({"text": f["text"], "id": f["id"]})
-    return flairs
+    return flair
+
+def find_flair_id(suggested_flair, flairs):
+    if not suggested_flair:
+        return None
+    
+    # Exact match first
+    for f in flairs:
+        if f["text"] == suggested_flair:
+            return f["id"]
+    
+    # Fuzzy match: strip emojis, compare by substring
+    for f in flairs:
+        if suggested_flair in f["text"] or f["text"] in suggested_flair:
+            return f["id"]
+    
+    # Final fallback: case-insensitive contains
+    for f in flairs:
+        if suggested_flair.lower() in f["text"].lower():
+            return f["id"]
+    return None
+    
 
 flairs = fetch_target_flairs()
 flair_options = [f["text"] for f in flairs]
@@ -271,7 +292,7 @@ try:
             posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
             continue
 
-        flair_id = next((f["id"] for f in flairs if f["text"] == suggested_flair), None)
+        flair_id = find_flair_id(suggested_flair, flairs)
 
         # Simplified logic: external links = submit, everything else = crosspost
         if is_external_link(post):
