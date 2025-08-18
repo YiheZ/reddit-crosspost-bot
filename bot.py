@@ -7,7 +7,7 @@ import random
 import requests
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, urlunparse
-from gemini_translate import translate_and_filter_with_gemini
+from genmini_translate import translate_and_filter_with_gemini
 
 # -----------------------------
 # Helper: safely load JSON env
@@ -53,7 +53,6 @@ TARGET_SUB = os.getenv("TARGET_SUB", "yoursub")
 INCLUDE_KEYWORDS = load_json_env("INCLUDE_KEYWORDS", [])
 EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", [])
 
-CROSSPOST_FLAIR_ID = os.getenv("CROSSPOST_FLAIR_ID", "")
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
 
@@ -76,7 +75,7 @@ def load_posted_ids():
     now_ts = int(datetime.now(timezone.utc).timestamp())
     clean_data = {}
     for pid, ts in data.get("posted_ids", {}).items():
-        if now_ts - ts <= 7*24*3600:  # keep 7 days
+        if now_ts - ts <= 7*24*3600:
             clean_data[pid] = ts
     return clean_data
 
@@ -121,13 +120,11 @@ def is_external_link(post):
     return not any(d in url for d in internal_domains)
 
 def get_original_post_title(post):
-    """If post is a crosspost, get the original post title, else use current title"""
     if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
         return post.crosspost_parent_list[0]["title"]
     return post.title
 
 def normalize_link(url: str) -> str:
-    """Normalize links for duplicate detection (strip trailing slash, lowercase, remove query)."""
     if not url:
         return url
     parsed = urlparse(url)
@@ -137,14 +134,19 @@ def normalize_link(url: str) -> str:
     return normalized
 
 # -----------------------------
+# Fetch available flairs from target subreddit
+# -----------------------------
+def fetch_target_flairs():
+    subreddit = reddit.subreddit(TARGET_SUB)
+    return [f["flair_text"] for f in subreddit.flair.link_templates if f["flair_text"]]
+
+# -----------------------------
 # Main bot logic
 # -----------------------------
 try:
-    # Track duplicate links within this run
     seen_links = set()
-
-    # Fetch candidates
     all_posts = []
+
     for sub in SOURCE_SUBS:
         posts = get_top_posts_past_day(sub.strip())
         limit = LIMIT_POSTS_DICT.get(sub.strip(), DEFAULT_LIMIT_POSTS)
@@ -156,22 +158,18 @@ try:
                 continue
             if not match_keywords(p.title):
                 continue
-            # Check duplicate links
             norm_url = normalize_link(p.url)
             if norm_url in seen_links:
-                print(f"⏭ Skipped duplicate link in batch: {p.url}")
                 continue
             seen_links.add(norm_url)
             filtered.append(p)
-
         filtered = filtered[:limit]
-        print(f"🔹 r/{sub.strip()}: fetched {len(posts)} posts, {len(filtered)} selected (limit {limit})")
         all_posts.extend(filtered)
+        print(f"🔹 r/{sub.strip()}: fetched {len(posts)}, selected {len(filtered)}")
 
-    # Get recent target posts
     recent_titles = get_recent_target_posts(hours=24)
+    flair_options = fetch_target_flairs()
 
-    # Prepare candidates for Gemini with subreddit info
     candidates = []
     for p in all_posts:
         orig_title = get_original_post_title(p)
@@ -184,57 +182,47 @@ try:
             "subreddit": p.subreddit.display_name
         })
 
-    # Gemini translate + filter
     title_map = {}
     if candidates:
-        result = translate_and_filter_with_gemini(candidates, recent_titles, target_lang=TRANSLATE_TARGET_LANG)
+        result = translate_and_filter_with_gemini(candidates, recent_titles, target_lang=TRANSLATE_TARGET_LANG, flair_options=flair_options)
         if "error" in result:
             print(f"❌ Gemini error: {result['error']}")
         else:
             title_map = result
 
-    # Post loop
     for post in all_posts:
         title_to_post = post.title
         skip = False
+        suggested_flair = None
         if post.id in title_map:
             title_to_post = title_map[post.id]["title_translated"]
             skip = title_map[post.id]["skip"]
+            suggested_flair = title_map[post.id].get("suggested_flair")
 
-        print(f"Posting from r/{post.subreddit.display_name}:")
-        print(f"  Original title: {post.title}")
-        print(f"  Title to post: {title_to_post}")
-        print(f"  Skip: {skip}")
+        print(f"Posting from r/{post.subreddit.display_name}: {title_to_post} | Skip: {skip} | Flair: {suggested_flair}")
 
-        # Determine if external
         external = is_external_link(post)
 
-        # Skip completely if title is empty or should be skipped and it's not an external link
         if skip and not external:
-            print("⏭ Skipped due to similarity with recent posts")
             posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
             continue
         if not title_to_post:
-            print("⏭ Skipped because translated title is empty")
             posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
             continue
 
-        # Determine submit vs crosspost
+        submit_kwargs = {"title": title_to_post, "send_replies": False}
+        if suggested_flair in flair_options:
+            submit_kwargs["flair_id"] = next(f["id"] for f in reddit.subreddit(TARGET_SUB).flair.link_templates if f["flair_text"] == suggested_flair)
+
         if external or post.subreddit.display_name.lower() in [s.lower() for s in FORCE_SUBMIT_SUBS]:
             reddit.subreddit(TARGET_SUB).submit(
                 title=title_to_post,
                 url=post.url,
-                flair_id=CROSSPOST_FLAIR_ID if CROSSPOST_FLAIR_ID else None
+                flair_id=submit_kwargs.get("flair_id")
             )
-            print(f"✅ Submitted (external/force) from r/{post.subreddit.display_name}")
         else:
-            crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post}
-            if CROSSPOST_FLAIR_ID:
-                crosspost_kwargs["flair_id"] = CROSSPOST_FLAIR_ID
-            post.crosspost(**crosspost_kwargs)
-            print(f"✅ Crossposted from r/{post.subreddit.display_name}")
+            post.crosspost(subreddit=TARGET_SUB, **submit_kwargs)
 
-        # Save both IDs if crosspost
         posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
         if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
             orig_id = post.crosspost_parent_list[0]["id"]
@@ -244,6 +232,7 @@ try:
 
     save_posted_ids(posted_ids)
     print("✅ Done")
+
 except Exception as e:
     print(f"❌ Fatal error: {e}")
     sys.exit(1)
