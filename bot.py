@@ -56,8 +56,6 @@ EXCLUDE_KEYWORDS = load_json_env("EXCLUDE_KEYWORDS", [])
 TRANSLATE_TARGET_LANG = os.getenv("TRANSLATE_TARGET_LANG", "ZH")
 TRANSLATE_SOURCE_LANGS = load_json_env("TRANSLATE_SOURCE_LANGS", {})
 
-# "popular" = top posts in past 24h (default)
-# "latest" = newest posts
 FETCH_MODE = os.getenv("FETCH_MODE", "popular").lower()
 
 LIMIT_POSTS_DICT = load_json_env("LIMIT_POSTS", {})
@@ -116,7 +114,6 @@ def fetch_posts(subreddit_name, max_candidates=500, top_limit=100):
         return posts[:top_limit]
 
     else:
-        # Default: popular
         posts = [p for p in subreddit.new(limit=max_candidates)
                  if datetime.fromtimestamp(p.created_utc, timezone.utc) >= one_day_ago]
         posts.sort(key=lambda p: p.score, reverse=True)
@@ -177,6 +174,8 @@ print(f"🔹 Available flairs in r/{TARGET_SUB}: {flair_options}")
 # -----------------------------
 def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0):
     failed = []
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+
     for post in posts:
         try:
             if post.id in posted_ids:
@@ -193,16 +192,22 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
                     flair_id = f["id"]
                     break
 
-            if skip or not title_to_post or not flair_id:
-                print(f"⏭ Skipped post {post.id} due to skip/empty title/missing flair")
-                posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
+            # ✅ Intentionally skipped posts (always add to Gist immediately)
+            if skip:
+                print(f"⏭ Intentionally skipped {post.id}")
+                posted_ids[post.id] = now_ts
                 continue
 
+            # ⚠️ Missing info -> treat as error -> retry
+            if not title_to_post or not flair_id:
+                print(f"⚠️ Missing translation/flair for {post.id} – will retry")
+                failed.append(post)
+                continue
+
+            # Try posting
             if is_external_link(post):
                 reddit.subreddit(TARGET_SUB).submit(
-                    title=title_to_post,
-                    url=post.url,
-                    flair_id=flair_id
+                    title=title_to_post, url=post.url, flair_id=flair_id
                 )
                 print(f"✅ Submitted external link: {title_to_post}")
             else:
@@ -210,55 +215,41 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
                 if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
                     orig_id = post.crosspost_parent_list[0]["id"]
                     post_to_cross = reddit.submission(id=orig_id)
-
-                crosspost_kwargs = {"subreddit": TARGET_SUB, "send_replies": False, "title": title_to_post, "flair_id": flair_id}
-                post_to_cross.crosspost(**crosspost_kwargs)
+                post_to_cross.crosspost(
+                    subreddit=TARGET_SUB, send_replies=False,
+                    title=title_to_post, flair_id=flair_id
+                )
                 print(f"✅ Crossposted: {title_to_post}")
 
-            posted_ids[post.id] = int(datetime.now(timezone.utc).timestamp())
+            posted_ids[post.id] = now_ts
             if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
-                orig_id = post.crosspost_parent_list[0]["id"]
-                posted_ids[orig_id] = int(datetime.now(timezone.utc).timestamp())
+                posted_ids[post.crosspost_parent_list[0]["id"]] = now_ts
 
-            time.sleep(random.randint(2,5))
+            time.sleep(random.randint(2, 5))
 
         except Exception as e:
             print(f"⚠️ Failed on post {post.id}: {e}")
             failed.append(post)
 
+    # Retry logic for errors only
     if failed and retries < MAX_RETRIES:
         print(f"🔁 Retrying {len(failed)} failed posts (attempt {retries+1}/{MAX_RETRIES})...")
         candidates = [
-            {"id": p.id, "title": get_original_post_title(p), "source_lang": None, "subreddit": p.subreddit.display_name}
+            {"id": p.id, "title": get_original_post_title(p),
+             "source_lang": None, "subreddit": p.subreddit.display_name}
             for p in failed if p.id not in posted_ids
         ]
         new_map = translate_and_filter_with_gemini(
-            candidates,
-            recent_titles,
-            target_lang=TRANSLATE_TARGET_LANG,
-            flair_options=flair_options
+            candidates, recent_titles,
+            target_lang=TRANSLATE_TARGET_LANG, flair_options=[f["text"] for f in flairs]
         )
         process_posts(failed, new_map, flairs, posted_ids, recent_titles, retries=retries+1)
 
-def get_title_map_with_retry(candidates, recent_titles, flair_options, retries=0):
-    try:
-        result = translate_and_filter_with_gemini(
-            candidates,
-            recent_titles,
-            target_lang=TRANSLATE_TARGET_LANG,
-            flair_options=flair_options
-        )
-        if "error" in result:
-            raise RuntimeError(result["error"])
-        return result
-    except Exception as e:
-        print(f"⚠️ Gemini translation attempt {retries+1} failed: {e}")
-        if retries+1 < MAX_TRANSLATE_RETRIES:
-            time.sleep(2**retries)  # exponential backoff
-            return get_title_map_with_retry(candidates, recent_titles, flair_options, retries+1)
-        else:
-            print("❌ Max retries reached, skipping translation.")
-            return {}
+    elif failed:
+        # Final retry exhausted -> add to Gist
+        print(f"❌ Max retries reached, marking {len(failed)} posts as failed")
+        for p in failed:
+            posted_ids[p.id] = now_ts
 
 # -----------------------------
 # Main bot logic
@@ -293,10 +284,8 @@ try:
             print(f"   Selected: {p.title}")
         all_posts.extend(filtered)
 
-    # Get recent target posts before using it
     recent_titles = get_recent_target_posts(hours=24)
-    
-    # Prepare candidates for Gemini
+
     candidates = []
     for p in all_posts:
         orig_title = get_original_post_title(p)
@@ -315,8 +304,16 @@ try:
         for c in candidates:
             print(f"   Candidate: {c['id']} | {c['title']} | src_lang={c['source_lang']}")
         
-        title_map = get_title_map_with_retry(candidates, recent_titles, flair_options)
-        if title_map:
+        result = translate_and_filter_with_gemini(
+            candidates,
+            recent_titles,
+            target_lang=TRANSLATE_TARGET_LANG,
+            flair_options=flair_options
+        )
+        if "error" in result:
+            print(f"❌ Gemini error: {result['error']}")
+        else:
+            title_map = result
             print(f"🔹 Gemini returned {len(title_map)} results:")
             for post_id, entry in title_map.items():
                 print(f"   {post_id}: {entry}")
