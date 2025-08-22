@@ -240,6 +240,26 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
         )
         process_posts(failed, new_map, flairs, posted_ids, recent_titles, retries=retries+1)
 
+def get_title_map_with_retry(candidates, recent_titles, flair_options, retries=0):
+    try:
+        result = translate_and_filter_with_gemini(
+            candidates,
+            recent_titles,
+            target_lang=TRANSLATE_TARGET_LANG,
+            flair_options=flair_options
+        )
+        if "error" in result:
+            raise RuntimeError(result["error"])
+        return result
+    except Exception as e:
+        print(f"⚠️ Gemini translation attempt {retries+1} failed: {e}")
+        if retries+1 < MAX_TRANSLATE_RETRIES:
+            time.sleep(2**retries)  # exponential backoff
+            return get_title_map_with_retry(candidates, recent_titles, flair_options, retries+1)
+        else:
+            print("❌ Max retries reached, skipping translation.")
+            return {}
+
 # -----------------------------
 # Main bot logic
 # -----------------------------
@@ -295,16 +315,8 @@ try:
         for c in candidates:
             print(f"   Candidate: {c['id']} | {c['title']} | src_lang={c['source_lang']}")
         
-        result = translate_and_filter_with_gemini(
-            candidates,
-            recent_titles,
-            target_lang=TRANSLATE_TARGET_LANG,
-            flair_options=flair_options
-        )
-        if "error" in result:
-            print(f"❌ Gemini error: {result['error']}")
-        else:
-            title_map = result
+        title_map = get_title_map_with_retry(candidates, recent_titles, flair_options)
+        if title_map:
             print(f"🔹 Gemini returned {len(title_map)} results:")
             for post_id, entry in title_map.items():
                 print(f"   {post_id}: {entry}")
