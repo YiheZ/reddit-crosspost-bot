@@ -210,15 +210,7 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
                     title=title_to_post, url=post.url, flair_id=flair_id
                 )
                 print(f"✅ Submitted external link: {title_to_post}")
-            
-            elif post.is_self:  # text/self post
-                body_to_post = entry.get("body_translated", post.selftext or "")
-                reddit.subreddit(TARGET_SUB).submit(
-                    title=title_to_post, selftext=body_to_post, flair_id=flair_id
-                )
-                print(f"✅ Submitted text post: {title_to_post}")
-            
-            else:  # media / crosspost
+            else:
                 post_to_cross = post
                 if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
                     orig_id = post.crosspost_parent_list[0]["id"]
@@ -302,7 +294,7 @@ try:
         candidates.append({
             "id": p.id,
             "title": orig_title,
-            "body": p.selftext if p.is_self else "",
+            "body": p.selftext if p.is_self else "",  # context only (not translated)
             "source_lang": None if skip_translation else src_lang,
             "subreddit": p.subreddit.display_name
         })
