@@ -227,7 +227,7 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
                     subreddit=TARGET_SUB, send_replies=False,
                     title=title_to_post, flair_id=flair_id
                 )
-                print(f"✅ Crossposted: {title_to_post}"))
+                print(f"✅ Crossposted: {title_to_post}")
 
             posted_ids[post.id] = now_ts
             if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
