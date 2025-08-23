@@ -17,35 +17,35 @@ def _sanitize_json_output(text: str) -> str:
 
 def _build_prompt(candidates, recent_titles, target_lang="ZH", flair_options=None):
     """
-    Build a Gemini prompt to translate Reddit post titles and optionally suggest flairs.
-    candidates: list of dicts {"id": str, "title": str, "source_lang": str or None, "subreddit": str}
-    recent_titles: list of titles already posted in target subreddit
-    flair_options: list of available flairs in target subreddit
+    Build a Gemini prompt to translate Reddit post titles (and text bodies if present).
     """
     lines = []
     for c in candidates:
         src = f"[{c['source_lang']}]" if c.get("source_lang") else ""
         sub = f"(r/{c['subreddit']})"
-        lines.append(f"{c['id']}: {src} {c['title']} {sub}")
+        title_line = f"{c['id']}: {src} {c['title']} {sub}"
+        if c.get("body"):
+            title_line += f"\n  BODY: {c['body'][:300]}..."  # truncate preview
+        lines.append(title_line)
 
     recent_joined = "\n".join(recent_titles)
     flair_text = f"Available flairs: {', '.join(flair_options)}\n" if flair_options else ""
 
     return (
         f"You are a professional translator for Reddit posts.\n"
-        f"Translate the following titles into {target_lang}, keeping the tone and style natural and native-sounding for the subreddit context.\n"
-        f"Convert any measurements to local units (e.g., kg, km, °C) if applicable.\n"
-        f"Do NOT add a full stop (。) at the end unless it is natural.\n"
-        f"If two or more titles are basically identical in meaning among the candidates, only translate the first one and mark the rest as skip.\n"
-        f"Do NOT post titles that are basically identical to any recent titles in the target subreddit.\n"
-        f"Check similarity against these recent titles:\n"
-        f"{recent_joined}\n"
+        f"Translate the following Reddit posts into {target_lang}, keeping them natural and native-sounding.\n"
+        f"Convert measurements to local units if needed.\n"
+        f"Do NOT add punctuation unnaturally.\n"
+        f"If multiple posts are duplicates in meaning, only keep the first and mark others as skip.\n"
+        f"Do NOT output duplicates of recent subreddit posts.\n"
+        f"Recent titles:\n{recent_joined}\n"
         f"{flair_text}"
-        f"For each candidate, return a JSON array of objects with:\n"
-        f"  - id: the post id\n"
-        f"  - title_translated: the translated title\n"
-        f"  - skip: true if meaning is basically the same as any recent post or another candidate already selected, false otherwise\n"
-        f"  - suggested_flair: pick the most suitable flair from the list for this post\n"
+        f"Return JSON array of objects with:\n"
+        f"  - id: post id\n"
+        f"  - title_translated\n"
+        f"  - body_translated (empty string if no body)\n"
+        f"  - skip: true/false\n"
+        f"  - suggested_flair\n"
         f"Return ONLY JSON.\n\n"
         f"Candidates:\n" + "\n".join(lines)
     )
@@ -71,6 +71,7 @@ def translate_and_filter_with_gemini(candidates, recent_titles, target_lang="ZH"
                 pid = item["id"]
                 result[pid] = {
                     "title_translated": item["title_translated"],
+                    "body_translated": item.get("body_translated", ""),
                     "skip": item.get("skip", False),
                     "suggested_flair": item.get("suggested_flair")
                 }
