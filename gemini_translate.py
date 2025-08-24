@@ -43,9 +43,10 @@ def _build_prompt(candidates, recent_titles, target_lang="ZH", flair_options=Non
         sub = f"(r/{c['subreddit']})"
         line = f"{c['id']}: {src} {c['title']} {sub}"
 
+        if c.get("skip_translation"):
+            line += f"\n  This post is already in target language. Do NOT translate the title. Keep 'title_translated' and 'content_translated' identical to original."
         if c.get("body"):
             line += f"\n  BODY (context only, do not translate): {c['body'][:5000]}"
-
         if c.get("url_content"):
             line += f"\n  EXTERNAL CONTENT (from {c['url']}): {c['url_content'][:5000]}"
         elif c.get("url") and ALLOW_GEMINI_FETCH:
