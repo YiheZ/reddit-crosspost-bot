@@ -104,13 +104,15 @@ print(f"🔹 Loaded {len(posted_ids)} previously posted IDs.")
 def match_keywords(title: str) -> bool:
     title_lower = title.lower()
     
+    # Exclude keywords first
     if any(kw.lower() in title_lower for kw in EXCLUDE_KEYWORDS if kw):
         return False
-    
+
+    # Include keywords: match exact words
     if INCLUDE_KEYWORDS:
-        result = any(kw.lower() in title_lower for kw in INCLUDE_KEYWORDS if kw)
-        return result
-        
+        pattern = r'\b(?:' + '|'.join(re.escape(kw.lower()) for kw in INCLUDE_KEYWORDS if kw) + r')\b'
+        return bool(re.search(pattern, title_lower))
+
     return True
 
 def fetch_posts(subreddit_name, max_candidates=500, top_limit=100):
