@@ -5,6 +5,7 @@ import sys
 import time
 import random
 import requests
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, urlunparse
 from gemini_translate import translate_and_filter_with_gemini
