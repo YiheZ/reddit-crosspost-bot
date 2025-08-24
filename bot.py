@@ -103,20 +103,14 @@ print(f"🔹 Loaded {len(posted_ids)} previously posted IDs.")
 # -----------------------------
 def match_keywords(title: str) -> bool:
     title_lower = title.lower()
-    print(f"DEBUG: Checking title: '{title_lower}'")
-    print(f"DEBUG: INCLUDE_KEYWORDS: {INCLUDE_KEYWORDS}")
-    print(f"DEBUG: EXCLUDE_KEYWORDS: {EXCLUDE_KEYWORDS}")
     
     if any(kw.lower() in title_lower for kw in EXCLUDE_KEYWORDS if kw):
-        print("DEBUG: Excluded due to exclude keywords")
         return False
     
     if INCLUDE_KEYWORDS:
         result = any(kw.lower() in title_lower for kw in INCLUDE_KEYWORDS if kw)
-        print(f"DEBUG: Include keyword check result: {result}")
         return result
-    
-    print("DEBUG: No include keywords defined, returning True")
+        
     return True
 
 def fetch_posts(subreddit_name, max_candidates=500, top_limit=100):
