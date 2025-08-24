@@ -77,9 +77,16 @@ def load_posted_ids():
     data = json.loads(content)
     now_ts = int(datetime.now(timezone.utc).timestamp())
     clean_data = {}
-    for pid, ts in data.get("posted_ids", {}).items():
+
+    for pid, val in data.get("posted_ids", {}).items():
+        if isinstance(val, dict):
+            ts = val.get("ts", 0)
+            url = val.get("url", "")
+        else:
+            ts, url = val, ""
         if now_ts - ts <= 7*24*3600:
-            clean_data[pid] = ts
+            clean_data[pid] = {"ts": ts, "url": url}
+
     return clean_data
 
 def save_posted_ids(posted_ids):
@@ -195,7 +202,7 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
             # ✅ Intentionally skipped posts (always add to Gist immediately)
             if skip:
                 print(f"⏭ Intentionally skipped {post.id}")
-                posted_ids[post.id] = now_ts
+                posted_ids[post.id] = {"ts": now_ts, "url": post.url if is_external_link(post) else ""}
                 continue
 
             # ⚠️ Missing info -> treat as error -> retry
@@ -221,9 +228,9 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
                 )
                 print(f"✅ Crossposted: {title_to_post}")
 
-            posted_ids[post.id] = now_ts
+            posted_ids[post.id] = {"ts": now_ts, "url": post.url if is_external_link(post) else ""}
             if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
-                posted_ids[post.crosspost_parent_list[0]["id"]] = now_ts
+                posted_ids[post.crosspost_parent_list[0]["id"]] = {"ts": now_ts, "url": post.url if is_external_link(post) else ""}
 
             time.sleep(random.randint(2, 5))
 
@@ -236,7 +243,8 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
         print(f"🔁 Retrying {len(failed)} failed posts (attempt {retries+1}/{MAX_RETRIES})...")
         candidates = [
             {"id": p.id, "title": get_original_post_title(p),
-             "source_lang": None, "subreddit": p.subreddit.display_name}
+             "source_lang": None, "subreddit": p.subreddit.display_name,
+             "url": p.url if not p.is_self else ""}
             for p in failed if p.id not in posted_ids
         ]
         new_map = translate_and_filter_with_gemini(
@@ -249,7 +257,7 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
         # Final retry exhausted -> add to Gist
         print(f"❌ Max retries reached, marking {len(failed)} posts as failed")
         for p in failed:
-            posted_ids[p.id] = now_ts
+            posted_ids[p.id] = {"ts": now_ts, "url": p.url if is_external_link(p) else ""}
 
 # -----------------------------
 # Main bot logic
@@ -257,6 +265,9 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
 try:
     seen_links = set()
     all_posts = []
+
+    # Collect previously saved URLs from Gist
+    saved_urls = {normalize_link(entry.get("url", "")) for entry in posted_ids.values() if isinstance(entry, dict) and entry.get("url")}
 
     for sub in SOURCE_SUBS:
         sub = sub.strip()
@@ -272,7 +283,7 @@ try:
 
             if not p.is_self:
                 norm_url = normalize_link(p.url)
-                if norm_url in seen_links:
+                if norm_url in seen_links or norm_url in saved_urls:
                     continue
                 seen_links.add(norm_url)
 
@@ -294,7 +305,8 @@ try:
         candidates.append({
             "id": p.id,
             "title": orig_title,
-            "body": p.selftext if p.is_self else "",  # context only (not translated)
+            "body": p.selftext if p.is_self else "",
+            "url": p.url if not p.is_self else "",
             "source_lang": None if skip_translation else src_lang,
             "subreddit": p.subreddit.display_name
         })
@@ -303,7 +315,7 @@ try:
     if candidates:
         print(f"🔹 Sending {len(candidates)} candidates to Gemini for translation and flair suggestion...")
         for c in candidates:
-            print(f"   Candidate: {c['id']} | {c['title']} | src_lang={c['source_lang']}")
+            print(f"   Candidate: {c['id']} | {c['title']} | src_lang={c['source_lang']} | url={c['url']}")
         
         result = translate_and_filter_with_gemini(
             candidates,
