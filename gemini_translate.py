@@ -55,7 +55,9 @@ def _build_prompt(candidates, recent_titles, target_lang="ZH", flair_options=Non
     return (
         f"You are a professional translator and news editor for Reddit posts.\n"
         f"Translate the following titles into {target_lang}, keeping them natural and native-sounding.\n"
-        f"Do NOT translate the body text; it is provided only as context.\n"
+        f"When translating, consider the context from the body and/or external URL content so that the translation is accurate, reasonable, "
+        f"and aligned with the actual meaning of the post.\n"
+        f"Do NOT translate the body text itself; it is provided only as context.\n"
         f"For posts with external URLs, read the linked content and produce a concise, formal, news-agency style summary, like a quick news bulletin. "
         f"Do NOT use phrases like 'this article' or 'the article'; write as a news report, direct and objective.\n"
         f"Include the summary in 'content_translated'. If no content is available, leave it empty.\n"
