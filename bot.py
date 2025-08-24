@@ -212,21 +212,22 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
                 failed.append(post)
                 continue
 
-            # Post logic
             subreddit = reddit.subreddit(TARGET_SUB)
+
             if is_external_link(post):
-                subreddit = reddit.subreddit(TARGET_SUB)
-                selftext = entry.get("content_translated", "")
-                # Always post as a link with body text if summary exists
-                subreddit.submit(
+                # Submit link first
+                submission = subreddit.submit(
                     title=title_to_post,
                     url=post.url,
-                    selftext=selftext if selftext else None,
                     flair_id=flair_id
                 )
+                # Add summary as body if exists
+                if content_translated:
+                    submission.edit(content_translated)
                 print(f"✅ Submitted external link with summary: {title_to_post}")
+
             else:
-                # Normal crosspost
+                # Crosspost for self posts
                 post_to_cross = post
                 if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
                     orig_id = post.crosspost_parent_list[0]["id"]
@@ -248,7 +249,7 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
             print(f"⚠️ Failed on post {post.id}: {e}")
             failed.append(post)
 
-    # Retry logic remains unchanged
+    # Retry unchanged
     if failed and retries < MAX_RETRIES:
         print(f"🔁 Retrying {len(failed)} failed posts (attempt {retries+1}/{MAX_RETRIES})...")
         candidates = [
