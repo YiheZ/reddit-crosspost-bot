@@ -324,7 +324,7 @@ try:
             "title": orig_title,
             "body": p.selftext if p.is_self else "",
             "url": p.url if not p.is_self else "",
-            "source_lang": None if skip_translation else src_lang,
+            "source_lang": src_lang,
             "subreddit": p.subreddit.display_name
         })
 
