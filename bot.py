@@ -215,15 +215,16 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
             # Post logic
             subreddit = reddit.subreddit(TARGET_SUB)
             if is_external_link(post):
-                if content_translated:
-                    # Post as self post with translated summary + original link at bottom
-                    selftext = f"{content_translated}\n\n[Original Link]({post.url})"
-                    subreddit.submit(title=title_to_post, selftext=selftext, flair_id=flair_id)
-                    print(f"✅ Submitted self-post with translated summary: {title_to_post}")
-                else:
-                    # Just post external link
-                    subreddit.submit(title=title_to_post, url=post.url, flair_id=flair_id)
-                    print(f"✅ Submitted external link: {title_to_post}")
+                subreddit = reddit.subreddit(TARGET_SUB)
+                selftext = entry.get("content_translated", "")
+                # Always post as a link with body text if summary exists
+                subreddit.submit(
+                    title=title_to_post,
+                    url=post.url,
+                    selftext=selftext if selftext else None,
+                    flair_id=flair_id
+                )
+                print(f"✅ Submitted external link with summary: {title_to_post}")
             else:
                 # Normal crosspost
                 post_to_cross = post
