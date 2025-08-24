@@ -11,6 +11,7 @@ if GEMINI_API_KEY:
 
 MODEL_NAME = "gemini-2.5-flash"
 DEBUG_PROMPT = os.getenv("DEBUG_PROMPT", "false").lower() == "true"
+ALLOW_GEMINI_FETCH = os.getenv("ALLOW_GEMINI_FETCH", "true").lower() == "true"
 
 def _sanitize_json_output(text: str) -> str:
     """Remove code fences and extra whitespace before parsing JSON."""
@@ -35,18 +36,21 @@ def _fetch_url_content(url: str, max_chars=5000) -> str:
         return ""
 
 def _build_prompt(candidates, recent_titles, target_lang="ZH", flair_options=None):
-    """
-    Build a Gemini prompt to translate Reddit titles and optionally summarize external content.
-    """
+    """Build Gemini prompt for translation and content summarization."""
     lines = []
     for c in candidates:
-        src = f"[{c['source_lang']}]" if c.get("source_lang") else ""
+        src = f"[{c.get('source_lang','')}]"
         sub = f"(r/{c['subreddit']})"
         line = f"{c['id']}: {src} {c['title']} {sub}"
+
         if c.get("body"):
-            line += f"\n  BODY (context only, do not translate): {c['body'][:1000]}"
+            line += f"\n  BODY (context only, do not translate): {c['body'][:5000]}"
+
         if c.get("url_content"):
-            line += f"\n  EXTERNAL CONTENT (from {c['url']}): {c['url_content'][:1000]}"
+            line += f"\n  EXTERNAL CONTENT (from {c['url']}): {c['url_content'][:5000]}"
+        elif c.get("url") and ALLOW_GEMINI_FETCH:
+            line += f"\n  EXTERNAL CONTENT UNAVAILABLE LOCALLY. If you have browsing capability, summarize directly from URL: {c['url']}"
+
         lines.append(line)
 
     recent_joined = "\n".join(recent_titles)
@@ -55,38 +59,42 @@ def _build_prompt(candidates, recent_titles, target_lang="ZH", flair_options=Non
     return (
         f"You are a professional translator and news editor for Reddit posts.\n"
         f"Translate the following titles into {target_lang}, keeping them natural and native-sounding.\n"
-        f"When translating, consider the context from the body and/or external URL content so that the translation is accurate, reasonable, "
-        f"and aligned with the actual meaning of the post.\n"
-        f"Do NOT translate the body text itself; it is provided only as context.\n"
-        f"For posts with external URLs, read the linked content and produce a concise, formal, news-agency style summary, like a quick news bulletin. "
-        f"Do NOT use phrases like 'this article' or 'the article'; write as a news report, direct and objective.\n"
-        f"Include the summary in 'content_translated'. If no content is available, leave it empty.\n"
+        f"When translating, consider context from the body and/or external URL content so translation is accurate.\n"
+        f"Do NOT translate the body text itself; it is context only.\n"
+        f"For posts with external URLs, use the provided EXTERNAL CONTENT. "
+        f"If only a raw URL is provided, attempt to summarize it if browsing is available; else leave content_translated empty.\n"
+        f"Write the summary in concise, formal, news-agency style. Avoid 'this article' phrasing.\n"
+        f"Include summary in 'content_translated'.\n"
         f"Do NOT add extra punctuation unless natural.\n"
-        f"If two or more titles are essentially identical in meaning among the candidates, translate only the first and mark the rest as skip.\n"
-        f"Do NOT output titles that duplicate recent posts in the target subreddit.\n"
+        f"If multiple titles are essentially identical, translate only the first and mark the rest as skip.\n"
+        f"Do NOT output titles duplicating recent posts.\n"
         f"Recent titles:\n{recent_joined}\n"
         f"{flair_text}"
-        f"IMPORTANT: Consider the SOURCE SUBREDDIT when translating.\n"
-        f"For each candidate, return a JSON array of objects with the following fields:\n"
-        f"  - id: post id\n"
-        f"  - title_translated: the translated title\n"
-        f"  - skip: true/false\n"
-        f"  - suggested_flair: pick the most suitable flair from the list\n"
-        f"  - content_translated: (optional) summarized & translated external content\n"
+        f"Consider the SOURCE SUBREDDIT when translating.\n"
+        f"Return a JSON array of objects with:\n"
+        f"  - id\n"
+        f"  - title_translated\n"
+        f"  - skip\n"
+        f"  - suggested_flair\n"
+        f"  - content_translated\n"
         f"Return ONLY JSON.\n\n"
         f"Candidates:\n" + "\n".join(lines)
     )
 
 def translate_and_filter_with_gemini(candidates, recent_titles, target_lang="ZH", flair_options=None):
+    """Main pipeline: fetch URLs locally, fallback to Gemini if needed, translate titles."""
     if not GEMINI_API_KEY:
         return {"error": "GEMINI_API_KEY not configured"}
     if not candidates:
         return {}
 
-    # Fetch external content if URL is provided
+    # Try to fetch external content locally
     for c in candidates:
         if c.get("url") and not c.get("url_content"):
-            c["url_content"] = _fetch_url_content(c["url"])
+            content = _fetch_url_content(c["url"])
+            if content:
+                c["url_content"] = content
+            # else: fallback handled in _build_prompt if ALLOW_GEMINI_FETCH=True
 
     prompt = _build_prompt(candidates, recent_titles, target_lang, flair_options)
 
@@ -100,7 +108,7 @@ def translate_and_filter_with_gemini(candidates, recent_titles, target_lang="ZH"
 
         try:
             parsed = json.loads(output)
-            # convert to dict keyed by post id
+            # Convert to dict keyed by post id
             result = {}
             for item in parsed:
                 pid = item["id"]
