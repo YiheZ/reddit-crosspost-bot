@@ -325,7 +325,8 @@ try:
             "body": p.selftext if p.is_self else "",
             "url": p.url if not p.is_self else "",
             "source_lang": src_lang,
-            "subreddit": p.subreddit.display_name
+            "subreddit": p.subreddit.display_name,
+            "skip_translation": skip_translation 
         })
 
     title_map = {}
