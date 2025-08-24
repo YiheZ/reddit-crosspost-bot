@@ -192,6 +192,7 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
             title_to_post = entry.get("title_translated", post.title)
             skip = entry.get("skip", False)
             suggested_flair = entry.get("suggested_flair")
+            content_translated = entry.get("content_translated", "")
 
             flair_id = None
             for f in flairs:
@@ -199,25 +200,32 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
                     flair_id = f["id"]
                     break
 
-            # ✅ Intentionally skipped posts (always add to Gist immediately)
+            # ✅ Intentionally skipped posts
             if skip:
                 print(f"⏭ Intentionally skipped {post.id}")
                 posted_ids[post.id] = {"ts": now_ts, "url": post.url if is_external_link(post) else ""}
                 continue
 
-            # ⚠️ Missing info -> treat as error -> retry
+            # ⚠️ Missing info -> retry
             if not title_to_post or not flair_id:
                 print(f"⚠️ Missing translation/flair for {post.id} – will retry")
                 failed.append(post)
                 continue
 
-            # Try posting
+            # Post logic
+            subreddit = reddit.subreddit(TARGET_SUB)
             if is_external_link(post):
-                reddit.subreddit(TARGET_SUB).submit(
-                    title=title_to_post, url=post.url, flair_id=flair_id
-                )
-                print(f"✅ Submitted external link: {title_to_post}")
+                if content_translated:
+                    # Post as self post with translated summary + original link at bottom
+                    selftext = f"{content_translated}\n\n[Original Link]({post.url})"
+                    subreddit.submit(title=title_to_post, selftext=selftext, flair_id=flair_id)
+                    print(f"✅ Submitted self-post with translated summary: {title_to_post}")
+                else:
+                    # Just post external link
+                    subreddit.submit(title=title_to_post, url=post.url, flair_id=flair_id)
+                    print(f"✅ Submitted external link: {title_to_post}")
             else:
+                # Normal crosspost
                 post_to_cross = post
                 if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
                     orig_id = post.crosspost_parent_list[0]["id"]
@@ -228,6 +236,7 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
                 )
                 print(f"✅ Crossposted: {title_to_post}")
 
+            # Update posted_ids
             posted_ids[post.id] = {"ts": now_ts, "url": post.url if is_external_link(post) else ""}
             if hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
                 posted_ids[post.crosspost_parent_list[0]["id"]] = {"ts": now_ts, "url": post.url if is_external_link(post) else ""}
@@ -238,7 +247,7 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
             print(f"⚠️ Failed on post {post.id}: {e}")
             failed.append(post)
 
-    # Retry logic for errors only
+    # Retry logic remains unchanged
     if failed and retries < MAX_RETRIES:
         print(f"🔁 Retrying {len(failed)} failed posts (attempt {retries+1}/{MAX_RETRIES})...")
         candidates = [
@@ -254,10 +263,9 @@ def process_posts(posts, title_map, flairs, posted_ids, recent_titles, retries=0
         process_posts(failed, new_map, flairs, posted_ids, recent_titles, retries=retries+1)
 
     elif failed:
-        # Final retry exhausted -> add to Gist
         print(f"❌ Max retries reached, marking {len(failed)} posts as failed")
         for p in failed:
-            posted_ids[p.id] = {"ts": now_ts, "url": p.url if is_external_link(p) else ""}
+            posted_ids[p.id] = {"ts": now_ts, "url": p.url if is_external_link(post) else ""}
 
 # -----------------------------
 # Main bot logic
