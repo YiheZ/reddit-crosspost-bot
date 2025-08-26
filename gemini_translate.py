@@ -46,9 +46,9 @@ def _build_prompt(candidates, recent_titles, target_lang="ZH", flair_options=Non
         if c.get("skip_translation"):
             line += f"\n  This post is already in target language. Do NOT translate the title. Keep 'title_translated' and 'content_translated' identical to original."
         if c.get("body"):
-            line += f"\n  BODY (context only, do not translate): {c['body'][:5000]}"
+            line += f"\n  BODY (context only, do not translate): {c['body'][:10000]}"
         if c.get("url_content"):
-            line += f"\n  EXTERNAL CONTENT (from {c['url']}): {c['url_content'][:5000]}"
+            line += f"\n  EXTERNAL CONTENT (from {c['url']}): {c['url_content'][:10000]}"
         elif c.get("url") and ALLOW_GEMINI_FETCH:
             line += f"\n  EXTERNAL CONTENT UNAVAILABLE LOCALLY. If you have browsing capability, summarize directly from URL: {c['url']}"
 
@@ -62,7 +62,7 @@ def _build_prompt(candidates, recent_titles, target_lang="ZH", flair_options=Non
         f"Translate and adapt each post title into {target_lang}, ensuring the result is:\n"
         f"  • Natural, fluent, and easy to read\n"
         f"  • Faithful to the original meaning but not word-for-word\n"
-        f"  • Styled like a polished news headline in {target_lang}, not like a direct translation\n\n"
+        f"  • Styled like a polished news headline in {target_lang}, with some light Reddit-style flair allowed (catchy, engaging, slightly provocative if it fits), not a rigid literal translation\n\n"
         f"Context and reference usage:\n"
         f"  • BODY text: Use only as context to clarify or disambiguate the title. Do NOT translate it directly.\n"
         f"  • EXTERNAL CONTENT: Use only as reference to improve accuracy of the translated title.\n"
@@ -78,13 +78,13 @@ def _build_prompt(candidates, recent_titles, target_lang="ZH", flair_options=Non
         f"  • For country names, use local conventions or standard abbreviations for {target_lang} readers.\n"
         f"    - Example: 'India, China' → '中印' in Chinese.\n\n"
         f"Summarization rules:\n"
-        f"  • Summaries must be concise, factual, and written in a neutral, news-agency style.\n"
-        f"  • Avoid casual commentary or phrases like 'this article'.\n\n"
+        f"  • Summaries must be concise translations of the content.\n"
+        f"  • Do NOT add commentary, conclusions, or extra context.\n\n"
         f"Deduplication rules:\n"
         f"  • If multiple titles are essentially the same, translate only the first and set 'skip' = true for the others.\n"
         f"  • Do not output titles that duplicate recent posts.\n\n"
         f"Tone:\n"
-        f"  • Adapt the style to match the SOURCE SUBREDDIT, but always keep it clean and professional.\n\n"
+        f"  • Adapt the style to match the SOURCE SUBREDDIT, keeping it engaging but professional. A hint of Reddit-style hook or intrigue is acceptable.\n\n"
         f"Output format:\n"
         f"Return ONLY a valid JSON array of objects with exactly these fields:\n"
         f"  - id\n"
