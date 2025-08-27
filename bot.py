@@ -183,6 +183,16 @@ flairs = fetch_target_flairs()
 flair_options = [f["text"] for f in flairs]
 print(f"🔹 Available flairs in r/{TARGET_SUB}: {flair_options}")
 
+def get_deepest_original(post):
+    """
+    Returns the deepest original submission object (not just metadata).
+    If no crosspost parent exists, returns the post itself.
+    """
+    while hasattr(post, "crosspost_parent_list") and post.crosspost_parent_list:
+        orig_id = post.crosspost_parent_list[0]["id"]
+        post = reddit.submission(id=orig_id)
+    return post
+
 # -----------------------------
 # Retry posting function
 # -----------------------------
@@ -316,17 +326,19 @@ try:
 
     candidates = []
     for p in all_posts:
-        orig_title = get_original_post_title(p)
-        src_lang = TRANSLATE_SOURCE_LANGS.get(p.subreddit.display_name.lower())
+        orig_post = get_deepest_original(p)
+        orig_title = orig_post.title
+        src_lang = TRANSLATE_SOURCE_LANGS.get(orig_post.subreddit.display_name.lower())
+        
         skip_translation = src_lang and src_lang.upper() == TRANSLATE_TARGET_LANG.upper()
         candidates.append({
             "id": p.id,
             "title": orig_title,
-            "body": p.selftext if p.is_self else "",
-            "url": p.url if not p.is_self else "",
+            "body": orig_post.selftext if orig_post.is_self else "",
+            "url": orig_post.url if not orig_post.is_self else "",
             "source_lang": src_lang,
-            "subreddit": p.subreddit.display_name,
-            "skip_translation": skip_translation 
+            "subreddit": orig_post.subreddit.display_name,
+            "skip_translation": skip_translation
         })
 
     title_map = {}
