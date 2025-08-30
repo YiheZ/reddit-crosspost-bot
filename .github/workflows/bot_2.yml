@@ -2,27 +2,43 @@ name: Reddit Crosspost Bot 2
 
 on:
   schedule:
-    - cron: '30 */1 * * *'   # every 1 hour at minute 30
-  workflow_dispatch:          # manual trigger
+    - cron: '30 */1 * * *'
+  workflow_dispatch:
 
 jobs:
   run-crosspost-2:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Run bot (config 2)
-        run: python bot.py
+      - name: Mask all sensitive env and vars
+        run: |
+          echo "::add-mask::${{ secrets.REDDIT_CLIENT_ID }}"
+          echo "::add-mask::${{ secrets.REDDIT_CLIENT_SECRET }}"
+          echo "::add-mask::${{ secrets.REDDIT_USERNAME }}"
+          echo "::add-mask::${{ secrets.REDDIT_PASSWORD }}"
+          echo "::add-mask::${{ secrets.DEEPL_API_KEY }}"
+          echo "::add-mask::${{ secrets.GEMINI_API_KEY }}"
+          echo "::add-mask::${{ secrets.GIST_ID }}"
+          echo "::add-mask::${{ secrets.MY_GIST_PAT }}"
+          echo "::add-mask::${{ vars.SOURCE_SUBS_2 }}"
+          echo "::add-mask::${{ vars.TARGET_SUB_2 }}"
+          echo "::add-mask::${{ vars.INCLUDE_KEYWORDS_2 }}"
+          echo "::add-mask::${{ vars.EXCLUDE_KEYWORDS_2 }}"
+          echo "::add-mask::${{ vars.LIMIT_POSTS_2 }}"
+          echo "::add-mask::${{ vars.FETCH_MODE_2 }}"
+          echo "::add-mask::${{ vars.TRANSLATE_SUBS }}"
+          echo "::add-mask::${{ vars.TRANSLATE_TARGET_LANG }}"
+          echo "::add-mask::${{ vars.TRANSLATE_SOURCE_LANGS }}"
+      - name: Run bot silently (config 2)
+        run: python bot.py > bot_output_2.log 2>&1
         env:
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
@@ -41,3 +57,8 @@ jobs:
           TRANSLATE_SUBS: ${{ vars.TRANSLATE_SUBS }}
           TRANSLATE_TARGET_LANG: ${{ vars.TRANSLATE_TARGET_LANG }}
           TRANSLATE_SOURCE_LANGS: ${{ vars.TRANSLATE_SOURCE_LANGS }}
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-output-2
+          path: bot_output_2.log
