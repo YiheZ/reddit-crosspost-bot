@@ -37,7 +37,7 @@ jobs:
           python bot.py > bot_output.log 2>&1
 
       - name: Upload results as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: bot-output
           path: bot_output.log
