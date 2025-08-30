@@ -10,17 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
       - name: Mask all secrets
         run: |
           echo "::add-mask::${{ secrets.REDDIT_CLIENT_ID }}"
@@ -31,12 +28,27 @@ jobs:
           echo "::add-mask::${{ secrets.GEMINI_API_KEY }}"
           echo "::add-mask::${{ secrets.GIST_ID }}"
           echo "::add-mask::${{ secrets.MY_GIST_PAT }}"
-
-      - name: Run bot silently
-        run: |
-          python bot.py > bot_output.log 2>&1
-
-      - name: Upload results as artifact
+      - name: Run bot
+        run: python bot.py
+        env:
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+          REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+          MY_GIST_PAT: ${{ secrets.MY_GIST_PAT }}
+          SOURCE_SUBS: ${{ vars.SOURCE_SUBS }}
+          TARGET_SUB: ${{ vars.TARGET_SUB }}
+          INCLUDE_KEYWORDS: ${{ vars.INCLUDE_KEYWORDS }}
+          EXCLUDE_KEYWORDS: ${{ vars.EXCLUDE_KEYWORDS }}
+          LIMIT_POSTS: ${{ vars.LIMIT_POSTS }}
+          TRANSLATE_SUBS: ${{ vars.TRANSLATE_SUBS }}
+          TRANSLATE_TARGET_LANG: ${{ vars.TRANSLATE_TARGET_LANG }}
+          TRANSLATE_SOURCE_LANGS: ${{ vars.TRANSLATE_SOURCE_LANGS }}
+          FETCH_MODE: ${{ vars.FETCH_MODE }}
+      - name: Upload results
         uses: actions/upload-artifact@v4
         with:
           name: bot-output
