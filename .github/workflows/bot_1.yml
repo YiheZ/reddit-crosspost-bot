@@ -18,7 +18,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Mask all secrets
+      - name: Mask all sensitive env
         run: |
           echo "::add-mask::${{ secrets.REDDIT_CLIENT_ID }}"
           echo "::add-mask::${{ secrets.REDDIT_CLIENT_SECRET }}"
@@ -28,8 +28,17 @@ jobs:
           echo "::add-mask::${{ secrets.GEMINI_API_KEY }}"
           echo "::add-mask::${{ secrets.GIST_ID }}"
           echo "::add-mask::${{ secrets.MY_GIST_PAT }}"
-      - name: Run bot
-        run: python bot.py
+          echo "::add-mask::${{ vars.SOURCE_SUBS }}"
+          echo "::add-mask::${{ vars.TARGET_SUB }}"
+          echo "::add-mask::${{ vars.INCLUDE_KEYWORDS }}"
+          echo "::add-mask::${{ vars.EXCLUDE_KEYWORDS }}"
+          echo "::add-mask::${{ vars.LIMIT_POSTS }}"
+          echo "::add-mask::${{ vars.TRANSLATE_SUBS }}"
+          echo "::add-mask::${{ vars.TRANSLATE_TARGET_LANG }}"
+          echo "::add-mask::${{ vars.TRANSLATE_SOURCE_LANGS }}"
+          echo "::add-mask::${{ vars.FETCH_MODE }}"
+      - name: Run bot silently
+        run: python bot.py > bot_output.log 2>&1
         env:
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
