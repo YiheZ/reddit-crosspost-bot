@@ -1,8 +1,8 @@
 name: Reddit Crosspost Bot 1
 
 on:
-#schedule:
-#    - cron: '0 */1 * * *'  # every 3 hour
+  schedule:
+    - cron: '0 */1 * * *'  # every hour
   workflow_dispatch:       # manual trigger
 
 jobs:
