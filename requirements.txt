@@ -2,3 +2,4 @@ praw==7.8.1
 requests==2.31.0
 google-generativeai>=0.3.0
 beautifulsoup4>=4.12.2
+packaging
