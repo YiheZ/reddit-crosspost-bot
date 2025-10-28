@@ -38,7 +38,7 @@ jobs:
           echo "::add-mask::${{ vars.TRANSLATE_SOURCE_LANGS }}"
           echo "::add-mask::${{ vars.FETCH_MODE }}"
       - name: Run bot silently
-        run: python bot.py > bot_output.log 2>&1
+        run: python bot.py
         env:
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
