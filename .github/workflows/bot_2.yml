@@ -1,8 +1,6 @@
 name: Reddit Crosspost Bot 2
 
 on:
-  schedule:
-    - cron: '30 */1 * * *'
   workflow_dispatch:
 
 jobs:
