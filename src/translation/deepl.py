@@ -7,8 +7,8 @@ DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", "")
 # Distinct opening→closing pairs (Chinese & common brackets)
 PAIRS = {
     "《": "》",
-    "“": "”",
-    "‘": "’",
+    "\u201c": "\u201d",  # " "
+    "\u2018": "\u2019",  # ' '
     "「": "」",
     "『": "』",
     "〈": "〉",

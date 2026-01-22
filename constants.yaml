@@ -1,0 +1,51 @@
+# Configuration for Reddit Crosspost Bot
+
+# Time settings (in seconds)
+time:
+  posted_id_retention_days: 7
+  recent_post_hours: 24
+
+# Post fetching
+post_fetching:
+  max_candidates: 500
+  top_limit: 100
+  limit_posts: 1
+  max_flair_search_results: 100
+
+# Submission settings
+submission:
+  min_post_delay: 2
+  max_post_delay: 5
+  max_retries: 3
+
+# Translation settings
+translation:
+  target_lang: "ZH"
+  gemini_model_name: "gemini-2.5-flash"
+
+# API URLs
+api:
+  gist_base: "https://api.github.com/gists"
+  gist_file_name: "posted_ids.json"
+  deepl_url: "https://api-free.deepl.com/v2/translate"
+
+# URL fetching
+url_fetching:
+  timeout: 10
+  max_chars: 5000
+
+# Internal domains (Reddit-owned)
+internal_domains:
+  - "reddit.com"
+  - "i.redd.it"
+  - "v.redd.it"
+  - "redditmedia.com"
+
+# Fetch modes
+fetch_modes:
+  latest: "latest"
+  popular: "popular"
+
+# Logging
+logging:
+  separator: "------------------------------------------------------------"

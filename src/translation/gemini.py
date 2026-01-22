@@ -69,7 +69,7 @@ def _build_prompt(candidates, recent_titles, target_lang="ZH", flair_options=Non
         f"  • EXTERNAL CONTENT: Use only as reference to improve accuracy of the translated title.\n"
         f"  • If only a raw URL is given: summarize concisely if browsing is available, otherwise leave 'content_translated' empty.\n\n"
         f"Source subreddit adaptation:\n"
-        f"  • Always consider the SOURCE SUBREDDIT (use each candidate’s subreddit) when translating.\n"
+        f"  • Always consider the SOURCE SUBREDDIT (use each candidate's subreddit) when translating.\n"
         f"  • Resolve ambiguous references (e.g., 'PM', 'the President', 'the government') in a way that fits the subreddit context.\n\n"
         f"Localization rules:\n"
         f"  • Convert measurement units into the local system expected by {target_lang} readers.\n"
