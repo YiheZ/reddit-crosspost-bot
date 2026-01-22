@@ -68,16 +68,6 @@ reddit-crosspost-bot/
     └── models/               # Data models (88 lines)
         └── __init__.py       # Dataclasses for posts, results
 ```
-odularized content**: Split into 6 focused files (filter, url_utils, time_utils, text_utils, dict_utils)
-- **Merged utilities**: `utils` module merged into `content` for better cohesion
-- **Split responsibilities**: `reddit_client` split into `fetcher` and `submitter`
-- **Proper grouping**: `processors` organized with `builder` and `submission`
-- **Balanced sizing**: Each module has clear, focused responsibility
-- **Moved to src/**: All application code now in `src/` directory (Python best practice)
-- **Merged utilities**: `utils` module merged into `content` for better cohesion
-- **Split responsibilities**: `reddit_client` split into `fetcher` and `submitter`
-- **Proper grouping**: `processors` organized with `builder` and `submission`
-- **Balanced sizing**: No single-responsibility modules; each has meaningful scope
 
 ## Installation
 
