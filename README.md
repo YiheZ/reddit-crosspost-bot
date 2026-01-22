@@ -73,7 +73,7 @@ reddit-crosspost-bot/
 
 1. **Clone the repository**
 ```bash
-git clone <repository-url>
+git clone [<repository-url>](https://github.com/YiheZ/reddit-crosspost-bot.git)
 cd reddit-crosspost-bot
 ```
 
